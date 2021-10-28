@@ -1,3 +1,8 @@
+#ifndef CTPG_H
+#define CTPG_H
+
+constexpr const char* version_str = "1.0.0";
+
 #include <utility>
 #include <type_traits>
 #include <cstdint>
@@ -1779,7 +1784,7 @@ private:
         size16_t state_idx;
         size32_t idx;
     };
-    
+
     using situation_queue_t = stdex::cqueue<situation_queue_entry, situation_address_space_size>;
 
     struct symbol
@@ -2670,3 +2675,5 @@ namespace regex
 }
 
 } // namespace ctpg
+
+#endif
