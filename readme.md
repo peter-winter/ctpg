@@ -581,7 +581,7 @@ constexpr parser p(
 
 How exactly would the functors look for this kind of parser?
 
-The first rule ```expr()``` is an example of an empty rule. This means the list can be _reduced_ from no input.
+The first rule ```list()``` is an example of an empty rule. This means the list can be _reduced_ from no input.
 
 Since the rule's left side is a ```list``` the functor needs to return its **value type**, which is a ```list_type```.
 The right side is empty so the functor needs to have no arguments.
@@ -659,7 +659,7 @@ constexpr parser p(
 
 **create**
 
-Use when a functor needs to return a defalt value of a given type:
+Use when a functor needs to return a default value of a given type:
 
 ```c++
 
