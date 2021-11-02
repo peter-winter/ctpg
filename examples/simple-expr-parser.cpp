@@ -1,7 +1,5 @@
 #include "../ctpg.hpp"
 #include <iostream>
-#include <sstream>
-#include <functional>
 
 using namespace ctpg;
 using namespace ctpg::buffers;
@@ -71,17 +69,22 @@ constexpr int v = res_ok.value();
 constexpr auto res_fail = p.parse(cstring_buffer("--"));
 constexpr bool b = res_fail.has_value();
 
-int main()
+int main(int argc, char* argv[])
 {
-    p.write_diag_str(std::cout);
+    if (argc != 2)
+    {
+        p.write_diag_str(std::cout);
 
-    std::cout << std::endl << "constexpr parse: " << v << std::endl;
-    static_assert(b == false);
+        std::cout << std::endl << "constexpr parse: " << v << std::endl;
+        static_assert(b == false);
+        return 0;
+    }
 
-    std::stringstream ss;
-    auto res = p.parse(parse_options{}.set_verbose(), string_buffer("2 * 5 + 3"), ss);
-    int rv = res.value();
-    std::cout << "runtime parse: " << rv << std::endl;
-    std::cout << "verbose output: " << std::endl << ss.str();
+    auto res = p.parse(parse_options{}.set_verbose(), string_buffer(argv[1]), std::cerr);
+    if (res.has_value())
+    {
+        int rv = res.value();
+        std::cout << "runtime parse: " << rv << std::endl;
+    }
     return 0;
 }
