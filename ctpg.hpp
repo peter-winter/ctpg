@@ -370,6 +370,12 @@ namespace stdex
 
 namespace utils
 {
+    template<typename T, typename... Args>
+    constexpr T construct_default(Args...)
+    {
+        return T();
+    }
+
     template<typename T, size_t... I>
     constexpr void copy_array(T *a1, const T* a2, std::index_sequence<I...>)
     {
@@ -644,13 +650,19 @@ namespace regex
     };
 }
 
+namespace detail
+{
+    constexpr std::string_view pass_sv(const std::string_view& sv) { return sv; }
+    constexpr char first_sv_char(const std::string_view& sv) { return sv[0]; }
+}
+
 template<auto& Pattern>
 class regex_term : public term
 {
 public:
-    using value_type = term_value<std::string_view>;
+    using internal_value_type = std::string_view;
+
     static const size_t dfa_size = regex::analyze_dfa_size(Pattern);
-    static const bool is_single_char = false;
     static const bool is_trivial = false;
 
     static const size_t pattern_size = std::size(Pattern);
@@ -676,6 +688,8 @@ public:
     constexpr const char* get_id() const { return id; }
     constexpr auto get_data() const { return regex::regex_pattern_data<pattern_size>{ Pattern }; }
 
+    constexpr const auto& get_ftor() const { return detail::pass_sv; }
+
 private:
     char id[pattern_size + 2] = {};
     const char* custom_name = nullptr;
@@ -684,9 +698,9 @@ private:
 class char_term : public term
 {
 public:
-    using value_type = term_value<char>;
+    using internal_value_type = char;
+
     static const size_t dfa_size = 2;
-    static const bool is_single_char = true;
     static const bool is_trivial = true;
 
     constexpr char_term(char c, int precedence = 0, associativity a = associativity::no_assoc):
@@ -700,6 +714,8 @@ public:
     constexpr char get_char() const { return c; }
     constexpr char get_data() const { return c; }
 
+    constexpr const auto& get_ftor() const { return detail::first_sv_char; }
+
 private:
     char c;
     char id[utils::char_names::name_size] = {};
@@ -709,9 +725,8 @@ template<size_t DataSize>
 class string_term : public term
 {
 public:
-    using value_type = term_value<std::string_view>;
+    using internal_value_type = std::string_view;
     static const size_t dfa_size = (DataSize - 1) * 2;
-    static const bool is_single_char = false;
     static const bool is_trivial = true;
 
     template<size_t N>
@@ -725,9 +740,64 @@ public:
     constexpr const char* get_name() const { return get_id(); }
     constexpr const auto& get_data() const { return data; }
 
+    constexpr const auto& get_ftor() const { return detail::pass_sv; }
+
 private:
     char data[DataSize] = {};
 };
+
+template<typename Term, typename Ftor>
+class typed_term
+{
+public:
+    using internal_value_type = std::invoke_result_t<Ftor, std::string_view>;
+    static const size_t dfa_size = Term::dfa_size;
+    static const bool is_trivial = Term::is_trivial;
+
+    constexpr typed_term(Term t, Ftor f):
+        term(t), ftor(f)
+    {}
+
+    constexpr const char* get_id() const { return term.get_id(); }
+    constexpr const char* get_name() const { return term.get_name(); }
+    constexpr decltype(auto) get_data() const { return term.get_data(); }
+
+    constexpr associativity get_associativity() const { return term.get_associativity(); }
+    constexpr int get_precedence() const { return term.get_precedence(); }
+
+    using ftor_type = Ftor;
+
+    constexpr const ftor_type& get_ftor() const { return ftor; }
+
+private:
+    Term term;
+    ftor_type ftor;
+};
+
+template<typename T, typename Enable = void>
+struct value_type
+{};
+
+template<typename T>
+struct value_type<T, std::enable_if_t<std::is_base_of_v<term, T>>>
+{
+    using type = term_value<typename T::internal_value_type>;
+};
+
+template<typename ValueType>
+struct value_type<nterm<ValueType>>
+{
+    using type = ValueType;
+};
+
+template<typename Term, typename Ftor>
+struct value_type<typed_term<Term, Ftor>>
+{
+    using type = term_value<typename typed_term<Term, Ftor>::internal_value_type>;
+};
+
+template<typename T>
+using value_type_t = typename value_type<T>::type;
 
 struct parse_options
 {
@@ -1081,43 +1151,46 @@ namespace regex
     class regex_digit_af : public term
     {
     public:
-        using value_type = term_value<char>;
+        using internal_value_type = char;
         static const size_t dfa_size = 2;
-        static const bool is_single_char = true;
         static const bool is_trivial = true;
 
         constexpr const char* get_id() const { return "$regex_digit_af$"; }
         constexpr const char* get_name() const { return get_id(); }
 
         constexpr auto get_data() const { return regex_af_digit_chars{}; }
+
+        constexpr const auto& get_ftor() const { return detail::first_sv_char; }
     };
 
     class regex_digit_09 : public term
     {
     public:
-        using value_type = term_value<char>;
+        using internal_value_type = char;
         static const size_t dfa_size = 2;
-        static const bool is_single_char = true;
         static const bool is_trivial = true;
 
         constexpr const char* get_id() const { return "$regex_digit_09$"; }
         constexpr const char* get_name() const { return get_id(); }
 
         constexpr auto get_data() const { return regex_09_digit_chars{}; }
+
+        constexpr const auto& get_ftor() const { return detail::first_sv_char; }
     };
 
     class regex_regular_char : public term
     {
     public:
-        using value_type = term_value<char>;
+        using internal_value_type = char;
         static const size_t dfa_size = 2;
-        static const bool is_single_char = true;
         static const bool is_trivial = true;
 
         constexpr const char* get_id() const { return "$regex_regular$"; }
         constexpr const char* get_name() const { return get_id(); }
 
         constexpr auto get_data() const { return regex_regular_chars_data{}; }
+
+        constexpr const auto& get_ftor() const { return detail::first_sv_char; }
     };
 
     template<size_t N, typename Parser>
@@ -1769,10 +1842,10 @@ private:
 
     using value_variant_type = meta::unique_types_variant_t<
         std::nullptr_t,
-        term_value<char>,
-        term_value<std::string_view>,
-        NTermValueType...
+        NTermValueType...,
+        value_type_t<Terms>...
     >;
+
     using term_subset = stdex::cbitset<term_count>;
     using nterm_subset = stdex::cbitset<nterm_count>;
     using right_side_slice_subset = stdex::cbitset<situation_size * rule_count>;
@@ -1847,15 +1920,14 @@ private:
         term_associativities[eof_idx] = associativity::no_assoc;
     }
 
-    template<typename Term>
-    constexpr void analyze_term(const Term& t, size16_t idx)
+    template<size16_t TermIdx, typename Term>
+    constexpr void analyze_term(const Term& t)
     {
-        term_precedences[idx] = t.get_precedence();
-        term_associativities[idx] = t.get_associativity();
-        term_names[idx] = t.get_name();
-        term_ids[idx] = t.get_id();
-        if constexpr (Term::is_single_char)
-            single_char_terms.set(idx);
+        term_precedences[TermIdx] = t.get_precedence();
+        term_associativities[TermIdx] = t.get_associativity();
+        term_names[TermIdx] = t.get_name();
+        term_ids[TermIdx] = t.get_id();
+        term_ftors[TermIdx] = string_view_to_term_value<TermIdx>;
     }
 
     template<typename ValueType>
@@ -1885,7 +1957,7 @@ private:
     template<size_t... I>
     constexpr void analyze_terms(std::index_sequence<I...>)
     {
-        (void(analyze_term(std::get<I>(term_tuple), I)), ...);
+        (void(analyze_term<I>(std::get<I>(term_tuple))), ...);
     }
 
     template<size_t... I>
@@ -1948,9 +2020,6 @@ private:
             return term_associativities[last_term_idx];
         return associativity::no_assoc;
     }
-
-    template<typename T>
-    using value_type_t = typename T::value_type;
 
     template<size_t Nr, typename F, typename L, typename... R, size_t... I>
     constexpr void analyze_rule(const detail::rule<F, L, R...>& r, std::index_sequence<I...>)
@@ -2297,6 +2366,14 @@ private:
         }
     }
 
+    template<size16_t TermIdx>
+    constexpr static value_variant_type string_view_to_term_value(const term_tuple_type& term_tuple, const std::string_view& sv, source_point sp)
+    {
+        const auto &t = std::get<TermIdx>(term_tuple);
+        using term_value_type = value_type_t<std::tuple_element_t<TermIdx, term_tuple_type>>;
+        return value_variant_type(term_value_type(t.get_ftor()(sv), sp));
+    }
+
     template<typename F, typename LValueType, typename... RValueType, size_t... I>
     constexpr static LValueType reduce_value_impl(const F& f, value_variant_type* start, std::index_sequence<I...>)
     {
@@ -2321,10 +2398,8 @@ private:
             ps.error_stream << ps.current_sp << " PARSE: Shift to " << new_cursor_value << ", term: " << sv << "\n";
         ps.cursor_stack.push_back(new_cursor_value);
 
-        if (single_char_terms.test(term_idx))
-            ps.value_stack.emplace_back(term_value<char>(sv[0], ps.current_sp));
-        else
-            ps.value_stack.emplace_back(term_value<std::string_view>(sv, ps.current_sp));
+        const auto& ftor = term_ftors[term_idx];
+        ps.value_stack.emplace_back(ftor(term_tuple, sv, ps.current_sp));
     }
 
     template<typename ParserState>
@@ -2465,9 +2540,13 @@ private:
     term_tuple_type term_tuple;
     nterm_tuple_type nterm_tuple;
     rule_tuple_type rule_tuple;
+
     using value_reductor = value_variant_type(*)(const rule_tuple_type&, value_variant_type*);
     value_reductor value_reductors[rule_count] = {};
-    term_subset single_char_terms = {};
+
+    using string_view_to_term_value_t = value_variant_type(*)(const term_tuple_type&, const std::string_view&, source_point);
+    string_view_to_term_value_t term_ftors[term_count] = {};
+
     using dfa_type = regex::dfa<lexer_dfa_size>;
     dfa_type lexer_sm = {};
 };
