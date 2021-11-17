@@ -4,14 +4,13 @@
 using namespace ctpg;
 using namespace ctpg::buffers;
 using namespace ctpg::ftors;
-using namespace std::placeholders;
 
 struct plus_op {};
 struct minus_op {};
 struct mul_op {};
 struct div_op {};
 
-struct binary_op
+struct calculator
 {
     constexpr int operator()(int x1, plus_op, int x2) const
     {
@@ -61,39 +60,28 @@ constexpr typed_term o_div(char_term('/', 2, associativity::ltor), create<div_op
 constexpr char number_pattern[] = "[1-9][0-9]*";
 constexpr typed_term number(regex_term<number_pattern>("number"), get_int);
 
+constexpr calculator c;
+
 constexpr parser p(
     expr,
     terms(number, o_plus, o_minus, o_mul, o_div, '(', ')'),
     nterms(expr),
     rules(
-        expr(expr, o_plus, expr) >= binary_op{},
-        expr(expr, o_minus, expr) >= binary_op{},
-        expr(expr, o_mul, expr) >= binary_op{},
-        expr(expr, o_div, expr) >= binary_op{},
-        expr(o_minus, expr)[3] >= binary_op{},
+        expr(expr, o_plus, expr) >= c,
+        expr(expr, o_minus, expr) >= c,
+        expr(expr, o_mul, expr) >= c,
+        expr(expr, o_div, expr) >= c,
+        expr(o_minus, expr)[3] >= c,
         expr('(', expr, ')') >= _e2,
         expr(number)
     )
 );
 
-//constexpr auto res_ok = p.parse(cstring_buffer("-120 * 2 / 10"));
-//constexpr int v = res_ok.value();
-
-//constexpr auto res_fail = p.parse(cstring_buffer("--"));
-//constexpr bool b = res_fail.has_value();
-
 int main(int argc, char* argv[])
 {
-/*    if (argc != 2)
-    {
-        p.write_diag_str(std::cout);
+    if (argc != 2)
+        return -1;
 
-        std::cout << std::endl << "constexpr parse: " << v << std::endl;
-        static_assert(b == false);
-        return 0;
-    }*/
-
-    p.write_diag_str(std::cout);
     auto res = p.parse(parse_options{}.set_verbose(), string_buffer(argv[1]), std::cerr);
     if (res.has_value())
     {
