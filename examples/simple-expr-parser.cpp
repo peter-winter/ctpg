@@ -4,7 +4,6 @@
 using namespace ctpg;
 using namespace ctpg::buffers;
 using namespace ctpg::ftors;
-using namespace std::placeholders;
 
 struct binary_op
 {

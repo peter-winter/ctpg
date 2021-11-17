@@ -1,3 +1,7 @@
+/*
+Compile Time JSON Parser example
+*/
+
 #include "../ctpg.hpp"
 
 #include <iostream>
