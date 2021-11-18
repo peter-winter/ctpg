@@ -27,6 +27,7 @@ All it needs is a C++17 compiler!
    * [Verbose output](#verbose-output)   
    * [Source tracking](#source-tracking)
    * [Buffers](#buffers)
+   * [Typed terms](#typed-terms)
 * [Regular expressions](#regular-expressions)
 * [Diagnostics](#diagnostics)
 
@@ -881,6 +882,35 @@ iterator& operator ++();      // pre and post incrementation
 iterator operator ++(int);
 bool operator == (const iterator& other) const;    // comparison operator
 ```
+### Typed terms
+
+It is possible to define term value types as custom types, not limited to ```char``` or ```std::string_view```.
+It can be achieved using ```typed_term``` class template.
+
+Wrap the usual term definition:
+
+```c++
+char_term plus('+');
+```
+
+with ```typed_term``` like this:
+
+```c++
+// a custom type for the plus term
+struct plus_tag{};
+
+typed_term plus(char_term('+'), create<plus_tag>{});
+```
+
+The ```create``` is a functor available in the ```ctpg::ftors``` namespace, which simply creates an object of given type using a default constructor of that type.
+In fact any callble object can be used instead of ```create```, this is just an example.
+The ```plus``` term has a value type identical to the return type of the functor, ```plus_tag``` in this case.
+
+Take a look at the **`typed_terms.cpp`** in the examples, it uses this feature to create a simple calculator, but instead of the
+runtime switch statement on the char value like in the **`simple_expr_parser.cpp`**, the functor object has an overload for each arithmetic operator.
+
+>Note: Typed terms cannot use their implicit versions like the basic terms (```char_term```, ```string_term```) in the rules. They have to be
+>referrenced by the typed_terms object.
 
 ## Regular expressions
 
