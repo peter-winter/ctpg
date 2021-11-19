@@ -1815,7 +1815,16 @@ public:
     {
         s << "PARSER" << "\n" << "\n";
 
-        s << "Parser Object size: " << sizeof(*this) << "\n\n";
+        s << "Parser Object size: " << sizeof(*this) << "\n\nRULES\n\n";
+
+        for (size16_t i = 0; i < rule_count; ++i)
+        {
+            s << i << "    ";
+            write_rule_diag_str(s, i);
+            s << "\n";
+        }
+
+        s << "\nSTATES\n\n";
         for (size16_t i = 0; i < state_count; ++i)
         {
             write_state_diag_str(s, i);
