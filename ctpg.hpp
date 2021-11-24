@@ -729,11 +729,10 @@ public:
     static const size_t dfa_size = (DataSize - 1) * 2;
     static const bool is_trivial = true;
 
-    template<size_t N>
-    constexpr string_term(const char (&str)[N], int precedence = 0, associativity a = associativity::no_assoc):
+    constexpr string_term(const char (&str)[DataSize], int precedence = 0, associativity a = associativity::no_assoc):
         term(precedence, a)
     {
-        utils::copy_array(data, str, std::make_index_sequence<N>{});
+        utils::copy_array(data, str, std::make_index_sequence<DataSize>{});
     }
 
     constexpr const char* get_id() const { return data; }
@@ -1836,9 +1835,9 @@ public:
     }
 
 private:
-    static const size_t max_states = MaxStatesUsage::template value<sizeof...(Terms), Rules::n...>;
     static const size_t max_rule_element_count = meta::max_v<1, Rules::n...>;
     static const size_t term_count = sizeof...(Terms) + 1;
+    static const size_t max_states = MaxStatesUsage::template value<term_count, Rules::n..., 1>;
     static const size16_t eof_idx = sizeof...(Terms);
     static const size_t nterm_count = sizeof...(NTermValueType) + 1;
     static const size16_t fake_root_idx = sizeof...(NTermValueType);
@@ -1867,7 +1866,10 @@ private:
         size32_t idx;
     };
 
-    using situation_queue_t = stdex::cqueue<situation_queue_entry, situation_address_space_size>;
+    using situation_queue_t = stdex::cqueue<
+        situation_queue_entry,
+        max_states * max_states
+    >;
 
     struct symbol
     {
@@ -2158,23 +2160,26 @@ private:
         situation_info root_situation_info{ root_rule_idx, 0, eof_idx };
         size32_t idx = make_situation_idx(root_situation_info);
         state_count = 1;
-        add_situation_to_state(0, idx);
+
+        situation_queue_t situation_queue = { };
+
+        add_situation_to_state(0, idx, situation_queue);
 
         while (!situation_queue.empty())
         {
             const auto& entry = situation_queue.top();
-            analyze_situation(entry.state_idx, entry.idx);
             situation_queue.pop();
+            analyze_situation(entry.state_idx, entry.idx, situation_queue);
         }
     }
 
-    constexpr void analyze_situation(size16_t state_idx, size32_t idx)
+    constexpr void analyze_situation(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue)
     {
-        situation_closure(state_idx, idx);
-        situation_transition(state_idx, idx);
+        situation_closure(state_idx, idx, situation_queue);
+        situation_transition(state_idx, idx, situation_queue);
     }
 
-    constexpr void add_situation_to_state(size16_t state_idx, size32_t idx)
+    constexpr void add_situation_to_state(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue)
     {
         state& s = states[state_idx];
         if (!s.test(idx))
@@ -2184,7 +2189,7 @@ private:
         }
     }
 
-    constexpr void situation_closure(size16_t state_idx, size32_t idx)
+    constexpr void situation_closure(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue)
     {
         situation_info addr = make_situation_info(idx);
         const rule_info& ri = rule_infos[addr.rule_info_idx];
@@ -2204,7 +2209,7 @@ private:
                     if (first.test(t))
                     {
                         size32_t new_s_idx = make_situation_idx(situation_info{ size16_t(s.start + i), 0, t });
-                        add_situation_to_state(state_idx, new_s_idx);
+                        add_situation_to_state(state_idx, new_s_idx, situation_queue);
                     }
                 }
             }
@@ -2227,7 +2232,7 @@ private:
         return parse_table_entry_kind::shift;
     }
 
-    constexpr void situation_transition(size16_t state_idx, size32_t idx)
+    constexpr void situation_transition(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue)
     {
         situation_info addr = make_situation_info(idx);
         const rule_info& ri = rule_infos[addr.rule_info_idx];
@@ -2263,7 +2268,7 @@ private:
 
         if (entry.has_shift)
         {
-            add_situation_to_state(entry.shift, new_idx);
+            add_situation_to_state(entry.shift, new_idx, situation_queue);
             return;
         }
 
@@ -2291,7 +2296,7 @@ private:
             entry.kind = parse_table_entry_kind::shift;
         };
         entry.set_shift(new_state_idx);
-        add_situation_to_state(new_state_idx, new_idx);
+        add_situation_to_state(new_state_idx, new_idx, situation_queue);
     }
 
     constexpr const char* get_symbol_name(const symbol& s) const
@@ -2540,7 +2545,6 @@ private:
     state states[max_states] = { };
     parse_table_entry parse_table[max_states][term_count + nterm_count] = {};
     size16_t state_count = 0;
-    situation_queue_t situation_queue = { };
     int term_precedences[term_count] = { };
     associativity term_associativities[term_count] = { };
     int rule_precedences[rule_count] = { };
@@ -2570,7 +2574,7 @@ struct use_max_states
 struct deduce_max_states
 {
     template<size_t TermCount, size_t... RuleSizes>
-    static const size_t value = ((0 + ... + (RuleSizes + 1)) + 2) * (TermCount + 1);
+    static const size_t value = (0 + ... + (RuleSizes + 1)) * TermCount;
 };
 
 template<typename Root, typename Terms, typename NTerms, typename Rules>
