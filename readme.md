@@ -575,7 +575,7 @@ constexpr parser p(
     nterms(list),
     rules(
         list(),
-        list(name, list)
+        list(list, name)
     )
 );
 ```
@@ -590,13 +590,13 @@ The right side is empty so the functor needs to have no arguments.
 So let's return an empty vector: ``` [](){ return list_type{}; } ```
 
 The second rule reduces a list from a name and a list, therefore the functor needs to accept:
-- ```term_value<std::string_view>``` for the first argument: name
-- ```list_type``` for the second argument: list
+- ```list_type``` for the first argument: list
+- ```term_value<std::string_view>``` for the second argument: name
 - return a ```list_type```
 
 So let's create a functor:
 
-```[](auto&& name, auto&& list){ list.emplace_back(std::move(name)); return list; }```
+```[](auto&& list, auto&& name){ list.emplace_back(std::move(name)); return list; }```
 
 The ```name``` argument will resolve to ```term_value<std::string_view>&&```, which is convertible to ```std::string_view&&```.
 
@@ -616,8 +616,8 @@ constexpr parser p(
     rules(
         list() 
             >= [](){ return list_type{}; },
-        list(name, list)
-            >= [](auto&& name, auto&& list){ list.push_back(name); return std::move(list); }
+        list(list, name)
+            >= [](auto&& list, auto&& name){ list.push_back(name); return std::move(list); }
     )
 );
 ```
@@ -675,8 +675,8 @@ constexpr parser p(
     rules(
         list() 
             >= create<list_type>{},    // use instead of a lambda
-        list(name, list)
-            >= [](auto&& name, auto&& list){ list.push_back(name); return std::move(list); }
+        list(list, name)
+            >= [](auto&& list, auto&& name){ list.push_back(name); return std::move(list); }
     )
 );
 ```
@@ -707,6 +707,36 @@ constexpr parser p(
             >= [](int i1, auto, int i2){ return i1 + i2; },
         expr('(', expr, ')')
             >= _e2      // here, just return the second element
+    )
+);
+```
+**list helpers**
+
+Use ```push_back``` or ```emplace_back``` when dealing with common list tasks.
+
+The ```push_back``` calls ```push_back``` on first element passing second element as argument:
+
+```
+list(list, element) = push_back{}
+```
+
+The ```emplace``` back works similarly but supports move semantics.
+
+```c++
+
+// word list parser from one of previous examples
+
+using namespace ctpg::ftors;
+
+constexpr parser p(
+    list,
+    terms(name),
+    nterms(list),
+    rules(
+        list() 
+            >= create<list_type>{},
+        list(list, name)
+            >= push_back{}
     )
 );
 ```
