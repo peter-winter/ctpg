@@ -1,7 +1,7 @@
 #ifndef CTPG_H
 #define CTPG_H
 
-constexpr const char* version_str = "1.1.1";
+constexpr const char* version_str = "1.2.0";
 
 #include <utility>
 #include <type_traits>
