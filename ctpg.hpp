@@ -1098,6 +1098,8 @@ namespace regex
             else
                 s_to.end_state = s_from.end_state;
 
+            s_from.unreachable = mark_from_as_unreachable ? 1 : 0;
+
             for (size_t i = 0; i < dfa_state::transitions_size; ++i)
             {
                 size16_t& tr_from = s_from.transitions[i];
@@ -1105,7 +1107,10 @@ namespace regex
                     continue;
                 size16_t& tr_to = s_to.transitions[i];
                 if (tr_to == uninitialized16)
+                {
                     tr_to = tr_from;
+                    sm[tr_to].unreachable = 0;
+                }
                 else
                     merge(tr_to, tr_from, keep_end_state, mark_from_as_unreachable);
             }
@@ -1115,12 +1120,10 @@ namespace regex
             {
                 size_t term_idx = cr[j];
                 if (term_idx != uninitialized16)
-                    mark_end_state(sm[to], term_idx);
+                    mark_end_state(s_to, term_idx);
                 else
                     break;
             }
-
-            s_from.unreachable = mark_from_as_unreachable ? 1 : 0;
         }
 
         constexpr void mark_end_state(dfa_state& s, size_t idx)
@@ -2666,6 +2669,26 @@ namespace ftors
         constexpr auto operator ()(Args&&...) const
         {
             return T{};
+        }
+    };
+
+    struct emplace_back
+    {
+        template<typename L, typename I>
+        L&& operator()(L&& list, I&& item) const
+        {
+            list.emplace_back(std::move(item));
+            return std::move(list);
+        }
+    };
+
+    struct push_back
+    {
+        template<typename L, typename I>
+        L&& operator()(L&& list, const I& item) const
+        {
+            list.push_back(item);
+            return std::move(list);
         }
     };
 }
