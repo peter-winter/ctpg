@@ -326,7 +326,7 @@ namespace stdex
 
         constexpr const T& top() const
         {
-            std::as_const(*this).top();
+            return std::as_const(*this).top();
         }
 
         constexpr bool empty() const
