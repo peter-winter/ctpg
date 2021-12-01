@@ -111,13 +111,6 @@ namespace stdex
             the_data{}, current_size(0)
         {}
 
-        constexpr cvector(T&& arg, size_t count):
-            the_data{}, current_size(0)
-        {
-            for (size_t i = 0; i < count; ++i)
-                emplace_back(std::move(arg));
-        }
-
         constexpr cvector(const T& arg, size_t count):
             the_data{}, current_size(0)
         {
