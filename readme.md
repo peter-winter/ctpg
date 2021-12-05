@@ -28,6 +28,7 @@ All it needs is a C++17 compiler!
    * [Source tracking](#source-tracking)
    * [Buffers](#buffers)
    * [Typed terms](#typed-terms)
+   * [Error recovery](#error-recovery)
 * [Regular expressions](#regular-expressions)
 * [Diagnostics](#diagnostics)
 
@@ -952,6 +953,45 @@ runtime switch statement on the char value like in the **`simple_expr_parser.cpp
 
 >Note: Typed terms cannot use their implicit versions like the basic terms (```char_term```, ```string_term```) in the rules. They have to be
 >referrenced by the typed_terms object.
+
+### Error recovery
+
+If a special ***error*** term in a rule is used, the parser tries to recover from syntax error.
+
+Consider the example from **error_recovery.cpp** example (here, simplified):
+
+```c++
+constexpr parser p(
+    exprs,
+    terms(number, o_plus, o_minus, o_mul, o_div, '(', ')', ';'),
+    nterms(exprs, expr),
+    rules(
+        exprs() >= create<exprs_type>{},
+        exprs(exprs, expr, ';') >= push_back<1, 2>{},
+        exprs(exprs, error, ';') >= _e1,
+        expr(expr, '+', expr) >= [](int x1, skip, int x2){ return x1 + x2; },
+        expr(number) >= [](const auto& sv){ return get_int(sv); }
+    )
+);
+```
+
+This rule allows parser to recover from syntax error when the expression is ill formed, the ```_e1``` functor will simply pass expressions parsed to this point:
+
+```c++
+exprs(exprs, error, ';') >= _e1,
+```
+
+Recovery follows the rules:
+
+- when syntax error occurs a special <error_recovery_token> is presented to the LR algorithm.
+- parser states are reverted (popped from a stack) until the state accepting the <error_recovery_token> is encountered.
+   - if at any point the is no more states to pop, algorithm fails.
+- <error_recovery_token> is shifted, and shift action is performed.
+- terminals are consumed and ignored until the terminal which would not result in a syntax error is encountered.
+   - if at any point end of input is encountered, the algorithm fails.
+
+To see how ***error*** in rules affect the parse table generation take a look at the diagnostic output and look for the <error_recovery_token> occurrences. 
+See the [Diagnostics](#diagnostics) section for details.
 
 ## Regular expressions
 
