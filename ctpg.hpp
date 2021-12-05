@@ -1,7 +1,7 @@
 #ifndef CTPG_H
 #define CTPG_H
 
-constexpr const char* version_str = "1.2.0";
+constexpr const char* version_str = "1.3.0";
 
 #include <utility>
 #include <type_traits>
@@ -673,6 +673,7 @@ namespace buffers
             constexpr iterator& operator ++() { ++ptr; return *this; }
             constexpr iterator operator ++(int) { iterator i(*this); ++ptr; return i; }
             constexpr bool operator == (const iterator& other) const { return ptr == other.ptr; }
+            constexpr bool operator != (const iterator& other) const { return ptr != other.ptr; }
         };
 
         constexpr iterator begin() const { return iterator{ data }; }
@@ -1458,7 +1459,8 @@ namespace regex
     {
         dfa_size_analyzer a;
         auto p = create_regex_parser(a);
-        auto res = p.parse(buffers::cstring_buffer(pattern));
+        buffers::cstring_buffer buffer(pattern);
+        auto res = p.parse(buffer);
         if (!res.has_value())
             throw std::runtime_error("invalid regex");
         return res.value().n;
@@ -1806,54 +1808,33 @@ namespace detail
             current_term_end_it(buffer_begin),
             buffer_end(buffer_end),
             current_term_idx(uninitialized16),
-            recovery_delimeter_idx(uninitialized16),
-            recovery_mode(false)
+            recovery_mode(false),
+            consume_mode(false)
         {
             cursor_stack.reserve(cursor_stack_initial_capacity);
             value_stack.reserve(value_stack_initial_capacity);
         }
 
-        using iterator = Iterator;
-
-        constexpr void enter_recovery_mode()
-        {
-            recovery_mode = true;
-            if (ps.options.verbose)
-                ps.error_stream << ps.current_sp << " PARSE: Entering recovery mode \n";
-        }
-
+        constexpr void enter_recovery_mode() { recovery_mode = true; }
+        constexpr void leave_recovery_mode() { recovery_mode = false; }
+        constexpr void enter_consume_mode() { consume_mode = true; }
+        constexpr void leave_consume_mode() { consume_mode = false; }
         constexpr bool in_recovery_mode() const { return recovery_mode; }
+        constexpr bool in_consume_mode() const { return consume_mode; }
 
-        constexpr void enter_skip_mode(size16_t term_idx)
-        {
-            recovery_mode = false;
-            recovery_delimeter_idx = term_idx;
-
-            if (ps.options.verbose)
-                ps.error_stream << ps.current_sp << " PARSE: Skipping terms in recovery mode until " << term_names[term_idx] << " \n";
-        }
-
-        constexpr bool in_skip_mode() const { return !recovery_mode && recovery_delimeter_idx != uninitialized16; }
-
-        constexpr void enter_normal_mode()
-        {
-            recovery_mode = false;
-            recovery_delimeter_idx = uninitialized16;
-
-            if (ps.options.verbose)
-                ps.error_stream << ps.current_sp << " PARSE: Leaving recovery mode \n";
-        }
+        using iterator = Iterator;
 
         CursorStack& cursor_stack;
         ValueStack& value_stack;
         ErrorStream& error_stream;
         parse_options options;
         source_point current_sp;
-        Iterator current_it;
-        Iterator current_term_end_it;
-        Iterator buffer_end;
+        iterator current_it;
+        iterator current_term_end_it;
+        iterator buffer_end;
         size16_t current_term_idx;
-        size16_t recovery_delimeter_idx;
+        bool recovery_mode;
+        bool consume_mode;
     };
 
     template<typename Buffer, size_t EmptyRulesCount>
@@ -1983,62 +1964,55 @@ public:
         {
             size16_t cursor = ps.cursor_stack.back();
 
-            if (ps.in_recovery_mode())
-            {
-                const auto& entry = parse_table[cursor][get_parse_table_idx(true, error_recovery_token_idx)];
-
-                if (entry.kind != parse_table_entry_kind::error)
-                {
-                    if (!do_action(ps, entry, buffer))
-                        break;
-                    continue;
-                }
-                else
-                {
-                    if (!pop_stacks(ps))
-                        break;
-                    continue;
-                }
-            }
-
-            if (ps.current_it == ps.current_term_end_it)
-            {
-                if (ps.options.skip_whitespace)
-                {
-                    iterator after_ws = skip_whitespace(ps);
-                    ps.current_sp.update(ps.current_it, after_ws);
-                    ps.current_it = after_ws;
-                }
-
-                auto res = get_next_term(ps);
-                ps.current_term_end_it = res.it;
-                ps.current_term_idx = res.term_idx;
-
-                if (ps.current_term_idx == uninitialized16)
-                {
-                    unexpected_char(ps);
-                    break;
-                }
-                else
-                {
-                    trace_recognized_term(ps);
-                }
-            }
-
-            if (ps.in_skip_mode()))
-            {
-                if (ps.current_term_idx != ps.recovery_delimeter_idx)
-                {
-                    ps.current_sp.update(ps.current_it, ps.current_term_end_it);
-                    ps.current_it = ps.current_term_end_it;
-                    continue;
-                }
-                enter_normal_mode();
-            }
-
-            const auto& entry = parse_table[cursor][get_parse_table_idx(true, ps.current_term_idx)];
-            if (!do_action(ps, entry, buffer))
+            auto t_idx = get_current_term(ps);
+            if (t_idx == uninitialized16)
                 break;
+
+            const auto& entry = parse_table[cursor][get_parse_table_idx(true, t_idx)];
+
+            if (entry.kind == parse_table_entry_kind::error)
+            {
+                if (ps.in_consume_mode())
+                {
+                    if (!consume_term_recovering(ps))
+                        break;
+                    continue;
+                }
+                if (!ps.in_recovery_mode())
+                {
+                    syntax_error(ps);
+                    enter_recovery_mode(ps);
+                }
+                if (!pop_stacks(ps))
+                    break;
+                continue;
+            }
+            else
+            {
+                if (ps.in_consume_mode())
+                    leave_consume_mode(ps);
+            }
+
+            if (entry.kind == parse_table_entry_kind::shift)
+            {
+                shift(ps, buffer.get_view(ps.current_it, ps.current_term_end_it), t_idx, entry.shift);
+                consume_term(ps);
+            }
+            else if (entry.kind == parse_table_entry_kind::shift_error_recovery_token)
+            {
+                shift_recovery_token(ps, entry.shift);
+                leave_recovery_mode(ps);
+                enter_consume_mode(ps);
+            }
+            else if (entry.kind == parse_table_entry_kind::reduce)
+                reduce(ps, entry.reduce);
+            else if (entry.kind == parse_table_entry_kind::rr_conflict)
+                rr_conflict(ps, entry.reduce);
+            else if (entry.kind == parse_table_entry_kind::success)
+            {
+                root_value = std::optional(std::move(success(ps)));
+                break;
+            }
         }
 
         return root_value;
@@ -2143,20 +2117,22 @@ private:
 
     enum class parse_table_entry_kind : size16_t { error, success, shift, shift_error_recovery_token, reduce, rr_conflict };
 
+    constexpr static bool is_shift(parse_table_entry_kind kind)
+    {
+        return kind == parse_table_entry_kind::shift || kind == parse_table_entry_kind::shift_error_recovery_token;
+    }
+
     struct parse_table_entry
     {
         parse_table_entry_kind kind = parse_table_entry_kind::error;
         size16_t shift = uninitialized16;
         size16_t reduce = uninitialized16;
-        size16_t recovery_delimeter_idx = uninitialized16;
 
-        bool has_shift() const { return shift != uninitialized16; }
-        bool has_reduce() const { return reduce != uninitialized16; }
-        bool has_recovery_delimeter_idx() const { return recovery_delimeter_idx != uninitialized16; }
+        bool has_shift = false;
+        bool has_reduce = false;
 
-        constexpr void set_shift(size16_t value) { shift = value; }
-        constexpr void set_reduce(size16_t value) { reduce = value; }
-        constexpr void set_recovery_delimeter_idx(size16_t value) { recovery_delimeter_idx = value; }
+        constexpr void set_shift(size16_t value) { shift = value; has_shift = true; }
+        constexpr void set_reduce(size16_t value) { reduce = value; has_reduce = true; }
     };
 
     constexpr static size16_t get_parse_table_idx(bool term, size16_t idx)
@@ -2496,11 +2472,11 @@ private:
             {
                 entry.kind = parse_table_entry_kind::success;
             }
-            else if (entry.has_shift())
+            else if (entry.has_shift)
             {
                 entry.kind = solve_conflict(addr.rule_info_idx, addr.t);
             }
-            else if (entry.has_reduce())
+            else if (entry.has_reduce)
             {
                 entry.kind = parse_table_entry_kind::rr_conflict;
             }
@@ -2515,7 +2491,7 @@ private:
         situation_info new_addr = situation_info{ addr.rule_info_idx, size16_t(addr.after + 1), addr.t };
         size32_t new_idx = make_situation_idx(new_addr);
 
-        if (entry.has_shift())
+        if (entry.has_shift)
         {
             add_situation_to_state(entry.shift, new_idx, situation_queue);
             return;
@@ -2536,7 +2512,7 @@ private:
             ++state_count;
         }
 
-        if (entry.has_reduce())
+        if (entry.has_reduce)
         {
             entry.kind = solve_conflict(entry.reduce, s.idx);
         }
@@ -2545,6 +2521,10 @@ private:
             entry.kind = parse_table_entry_kind::shift;
         };
         entry.set_shift(new_state_idx);
+
+        if (entry.kind == parse_table_entry_kind::shift && s.idx == error_recovery_token_idx)
+            entry.kind = parse_table_entry_kind::shift_error_recovery_token;
+
         add_situation_to_state(new_state_idx, new_idx, situation_queue);
     }
 
@@ -2603,7 +2583,7 @@ private:
         for (size_t i = 0; i < nterm_count; ++i)
         {
             const auto& entry = parse_table[idx][i];
-            if (entry.kind == parse_table_entry_kind::shift)
+            if (is_shift(entry.kind))
                 s << "On " << nterm_names[i] << " go to " << entry.shift << "\n";
         }
         for (size_t i = nterm_count; i < nterm_count + term_count; ++i)
@@ -2616,11 +2596,11 @@ private:
             s << "On " << term_names[term_idx];
             if (entry.kind == parse_table_entry_kind::success)
                 s << " success \n";
-            else if (entry.kind == parse_table_entry_kind::reduce && entry.has_shift())
+            else if (entry.kind == parse_table_entry_kind::reduce && entry.has_shift)
                 s << " shift to " << entry.shift << " S/R CONFLICT, prefer reduce(" << rule_infos[entry.reduce].r_idx << ") over shift\n";
-            else if (entry.kind == parse_table_entry_kind::shift && entry.has_reduce())
+            else if (is_shift(entry.kind) && entry.has_reduce)
                 s << " shift to " << entry.shift << " S/R CONFLICT, prefer shift over reduce(" << rule_infos[entry.reduce].r_idx << ")\n";
-            else if (entry.kind == parse_table_entry_kind::shift)
+            else if (is_shift(entry.kind))
                 s << " shift to " << entry.shift << "\n";
             else if (entry.kind == parse_table_entry_kind::reduce)
                 s << " reduce using (" << rule_infos[entry.reduce].r_idx << ")\n";
@@ -2714,56 +2694,24 @@ private:
     template<typename ParseState>
     constexpr bool pop_stacks(ParseState& ps) const
     {
+        ps.cursor_stack.pop_back();
+        if (ps.value_stack.size() != 0)
+            ps.value_stack.pop_back();
+
         if (ps.cursor_stack.size() == 0)
         {
             if (ps.options.verbose)
             {
-                ps.error_stream << ps.current_sp << " PARSE: Cound not recover from error \n";
+                ps.error_stream << ps.current_sp << " PARSE: Could not recover from error \n";
             }
             return false;
         }
 
-        ps.cursor_stack.pop_back();
-        ps.value_stack.pop_back();
-
         if (ps.options.verbose)
         {
-            ps.error_stream << ps.current_sp << " PARSE: Recovering to state " << ps.cursor_stack.top() << "\n";
+            ps.error_stream << ps.current_sp << " PARSE: Recovering to state " << ps.cursor_stack.back() << "\n";
         }
 
-        return true;
-    }
-
-    template<typename ParseState, typename Buffer>
-    constexpr bool do_action(ParseState& ps, const parse_table_entry& entry, const Buffer& buffer) const
-    {
-        if (entry.kind == parse_table_entry_kind::shift)
-        {
-            shift(ps, buffer.get_view(ps.current_it, ps.current_term_end_it), ps.current_term_idx, entry.shift);
-            ps.current_sp.update(ps.current_it, ps.current_term_end_it);
-            ps.current_it = ps.current_term_end_it;
-        }
-        else if (entry.kind == parse_table_entry_kind::shift_error_recovery_token)
-        {
-            shift_recovery_token(ps, entry.shift);
-            ps.enter_skip_mode(entry.recovery_delimeter_idx);
-        }
-        else if (entry.kind == parse_table_entry_kind::reduce)
-            reduce(ps, entry.reduce);
-        else if (entry.kind == parse_table_entry_kind::rr_conflict)
-            rr_conflict(ps, entry.reduce);
-        else if (entry.kind == parse_table_entry_kind::success)
-        {
-            root_value = std::optional(std::move(success(ps)));
-            return false;
-        }
-        else
-        {
-            syntax_error(ps);
-            if (ps.in_recovery_mode())
-                return false;
-            ps.enter_recovery_mode();
-        }
         return true;
     }
 
@@ -2785,17 +2733,108 @@ private:
     }
 
     template<typename ParseState>
-    constexpr auto get_next_term(ParseState& ps) const
+    constexpr void consume_term(ParseState& ps) const
     {
+        ps.current_sp.update(ps.current_it, ps.current_term_end_it);
+        ps.current_it = ps.current_term_end_it;
+    }
+
+    template<typename ParseState>
+    constexpr void enter_recovery_mode(ParseState& ps) const
+    {
+        if (ps.options.verbose)
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Entering recovery mode \n";
+        }
+        ps.enter_recovery_mode();
+    }
+
+    template<typename ParseState>
+    constexpr void leave_recovery_mode(ParseState& ps) const
+    {
+        if (ps.options.verbose)
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Leaving recovery mode \n";
+        }
+        ps.leave_recovery_mode();
+    }
+
+    template<typename ParseState>
+    constexpr void enter_consume_mode(ParseState& ps) const
+    {
+        if (ps.options.verbose)
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Entering consume mode \n";
+        }
+        ps.enter_consume_mode();
+    }
+
+    template<typename ParseState>
+    constexpr void leave_consume_mode(ParseState& ps) const
+    {
+        if (ps.options.verbose)
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Leaving consume mode \n";
+        }
+        ps.leave_consume_mode();
+    }
+
+    template<typename ParseState>
+    constexpr bool consume_term_recovering(ParseState& ps) const
+    {
+        if (ps.current_term_idx == eof_idx)
+            return false;
+        if (ps.options.verbose)
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Recovery, consuming term " << term_names[ps.current_term_idx] << " \n";
+        }
+        consume_term(ps);
+        return true;
+    }
+
+    template<typename ParseState>
+    constexpr size16_t get_current_term(ParseState& ps) const
+    {
+        if (ps.in_recovery_mode())
+            return error_recovery_token_idx;
+
+        if (ps.current_it != ps.current_term_end_it)
+            return ps.current_term_idx;
+
+        if (ps.options.skip_whitespace)
+        {
+            auto after_ws = skip_whitespace(ps);
+            ps.current_sp.update(ps.current_it, after_ws);
+            ps.current_it = after_ws;
+        }
+
+        using res_type = regex::recognized_term<typename ParseState::iterator>;
+
         if (ps.current_it == ps.buffer_end)
         {
-            return regex::recognized_term<typename ParseState::iterator>{ ps.buffer_end, eof_idx };
+            ps.current_term_idx = eof_idx;
+            trace_recognized_term(ps);
+            return eof_idx;
         }
 
         regex::match_options opts;
         opts.set_verbose(ps.options.verbose);
         opts.sp = ps.current_sp;
-        return regex::dfa_match(lexer_sm, opts, ps.current_it, ps.buffer_end, ps.error_stream);
+        auto res = regex::dfa_match(lexer_sm, opts, ps.current_it, ps.buffer_end, ps.error_stream);
+        ps.current_term_end_it = res.it;
+        ps.current_term_idx = res.term_idx;
+
+        if (ps.current_term_idx == uninitialized16)
+        {
+            unexpected_char(ps);
+            return uninitialized16;
+        }
+        else
+        {
+            trace_recognized_term(ps);
+        }
+
+        return ps.current_term_idx;
     }
 
     template<typename ParseState>
@@ -2806,7 +2845,7 @@ private:
         auto start = ps.current_it;
         while (true)
         {
-            if (start == ps.current_term_end_it)
+            if (start == ps.buffer_end)
                 break;
             if (utils::find_char(*start, space_chars) == uninitialized)
                 break;
@@ -2825,8 +2864,7 @@ private:
     constexpr void trace_recognized_term(ParseState& ps) const
     {
         if (ps.options.verbose)
-            ps.error_stream << ps.current_sp << " PARSE: " << (ps.in_skip_mode() ? "(recovery)" : "")
-            << " Recognized " << term_names[ps.current_term_idx] << " \n";
+            ps.error_stream << ps.current_sp << " PARSE: Recognized " << term_names[ps.current_term_idx] << " \n";
     }
 
     struct no_parser{};
