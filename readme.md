@@ -963,7 +963,7 @@ Consider the example from **error_recovery.cpp** example (here, simplified):
 ```c++
 constexpr parser p(
     exprs,
-    terms(number, o_plus, o_minus, o_mul, o_div, '(', ')', ';'),
+    terms(number, o_plus, ';'),
     nterms(exprs, expr),
     rules(
         exprs() >= create<exprs_type>{},
