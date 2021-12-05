@@ -1,7 +1,7 @@
 #ifndef CTPG_H
 #define CTPG_H
 
-constexpr const char* version_str = "1.2.0";
+constexpr const char* version_str = "1.3.0";
 
 #include <utility>
 #include <type_traits>
@@ -170,6 +170,7 @@ namespace stdex
         constexpr iterator begin() { return iterator(the_data); }
         constexpr iterator end() { return iterator(the_data + current_size); }
         constexpr void clear() { current_size = 0; }
+        constexpr void pop_back() { current_size--; }
         constexpr iterator erase(iterator first, iterator last)
         {
             if (!(first < last))
@@ -481,6 +482,177 @@ namespace utils
     };
 }
 
+namespace ftors
+{
+    template<size_t>
+    struct ignore
+    {
+        template<typename T>
+        constexpr ignore(T&&){}
+    };
+
+    template<size_t X, typename = std::make_index_sequence<X - 1>>
+    class element
+    {};
+
+    template<size_t X, size_t... I>
+    class element<X, std::index_sequence<I...>>
+    {
+    public:
+        template<typename First, typename... Rest>
+        constexpr decltype(auto) operator ()(ignore<I>..., First&& arg, Rest&&...) const
+        {
+            return std::forward<First>(arg);
+        }
+    };
+
+    constexpr element<1> _e1;
+    constexpr element<2> _e2;
+    constexpr element<3> _e3;
+    constexpr element<4> _e4;
+    constexpr element<5> _e5;
+    constexpr element<6> _e6;
+    constexpr element<7> _e7;
+    constexpr element<8> _e8;
+    constexpr element<9> _e9;
+
+    template<typename T>
+    class val
+    {
+    public:
+        constexpr val(T&& v):
+            v(std::forward<T>(v))
+        {}
+
+        template<typename... Args>
+        constexpr auto operator ()(Args&&...) const
+        {
+            return v;
+        }
+
+    private:
+        T v;
+    };
+
+    template<typename T>
+    val(T&&) -> val<std::decay_t<T>>;
+
+    template<typename T>
+    class create
+    {
+    public:
+        template<typename... Args>
+        constexpr auto operator ()(Args&&...) const
+        {
+            return T{};
+        }
+    };
+
+    template<
+        std::size_t ContIdx = 1,
+        std::size_t ArgIdx = 2,
+        typename = std::make_index_sequence<std::min(ContIdx, ArgIdx) - 1>,
+        typename = std::make_index_sequence<std::max(ContIdx, ArgIdx) - std::min(ContIdx, ArgIdx) - 1>,
+        bool container_first = ContIdx < ArgIdx
+    >
+    struct emplace_back
+    {};
+
+    template<
+        std::size_t ContIdx,
+        std::size_t ArgIdx,
+        std::size_t... Skip1,
+        std::size_t... Skip2
+    >
+    struct emplace_back<
+        ContIdx,
+        ArgIdx,
+        std::index_sequence<Skip1...>,
+        std::index_sequence<Skip2...>,
+        true>
+    {
+        template<typename Container, typename Arg, typename... Rest>
+        constexpr decltype(auto) operator()(ignore<Skip1>..., Container &&container, ignore<Skip2>..., Arg&& arg, Rest&&...) const
+        {
+            container.emplace_back(std::move(arg));
+            return std::move(container);
+        }
+    };
+
+    template<
+        std::size_t ContIdx,
+        std::size_t ArgIdx,
+        std::size_t... Skip1,
+        std::size_t... Skip2
+    >
+    struct emplace_back<
+        ContIdx,
+        ArgIdx,
+        std::index_sequence<Skip1...>,
+        std::index_sequence<Skip2...>,
+        false>
+    {
+        template<typename Container, typename Arg, typename... Rest>
+        constexpr decltype(auto) operator()(ignore<Skip1>..., Arg&& arg, ignore<Skip2>..., Container &&container, Rest&&...) const
+        {
+            container.emplace_back(std::move(arg));
+            return std::move(container);
+        }
+    };
+
+    template<
+        std::size_t ContIdx = 1,
+        std::size_t ArgIdx = 2,
+        typename = std::make_index_sequence<std::min(ContIdx, ArgIdx) - 1>,
+        typename = std::make_index_sequence<std::max(ContIdx, ArgIdx) - std::min(ContIdx, ArgIdx) - 1>,
+        bool container_first = ContIdx < ArgIdx
+    >
+    struct push_back
+    {};
+
+    template<
+        std::size_t ContIdx,
+        std::size_t ArgIdx,
+        std::size_t... Skip1,
+        std::size_t... Skip2
+    >
+    struct push_back<
+        ContIdx,
+        ArgIdx,
+        std::index_sequence<Skip1...>,
+        std::index_sequence<Skip2...>,
+        true>
+    {
+        template<typename Container, typename Arg, typename... Rest>
+        constexpr decltype(auto) operator()(ignore<Skip1>..., Container &&container, ignore<Skip2>..., Arg&& arg, Rest&&...) const
+        {
+            container.emplace_back(std::move(arg));
+            return std::move(container);
+        }
+    };
+
+    template<
+        std::size_t ContIdx,
+        std::size_t ArgIdx,
+        std::size_t... Skip1,
+        std::size_t... Skip2
+    >
+    struct push_back<
+        ContIdx,
+        ArgIdx,
+        std::index_sequence<Skip1...>,
+        std::index_sequence<Skip2...>,
+        false>
+    {
+        template<typename Container, typename Arg, typename... Rest>
+        constexpr decltype(auto) operator()(ignore<Skip1>..., Arg&& arg, ignore<Skip2>..., Container &&container, Rest&&...) const
+        {
+            container.emplace_back(std::move(arg));
+            return std::move(container);
+        }
+    };
+}
+
 namespace buffers
 {
     template<size_t N>
@@ -501,6 +673,7 @@ namespace buffers
             constexpr iterator& operator ++() { ++ptr; return *this; }
             constexpr iterator operator ++(int) { iterator i(*this); ++ptr; return i; }
             constexpr bool operator == (const iterator& other) const { return ptr == other.ptr; }
+            constexpr bool operator != (const iterator& other) const { return ptr != other.ptr; }
         };
 
         constexpr iterator begin() const { return iterator{ data }; }
@@ -766,6 +939,14 @@ private:
     ftor_type ftor;
 };
 
+struct error_recovery_token
+{
+    constexpr static const char* get_name() { return "<error_recovery_token>"; }
+    constexpr static const char* get_id() { return get_name(); }
+};
+
+constexpr error_recovery_token error;
+
 template<typename T, typename Enable = void>
 struct value_type
 {};
@@ -786,6 +967,14 @@ template<typename Term, typename Ftor>
 struct value_type<typed_term<Term, Ftor>>
 {
     using type = term_value<typename typed_term<Term, Ftor>::internal_value_type>;
+};
+
+struct no_type {};
+
+template<>
+struct value_type<error_recovery_token>
+{
+    using type = no_type;
 };
 
 template<typename T>
@@ -1270,7 +1459,8 @@ namespace regex
     {
         dfa_size_analyzer a;
         auto p = create_regex_parser(a);
-        auto res = p.parse(buffers::cstring_buffer(pattern));
+        buffers::cstring_buffer buffer(pattern);
+        auto res = p.parse(buffer);
         if (!res.has_value())
             throw std::runtime_error("invalid regex");
         return res.value().n;
@@ -1599,29 +1789,52 @@ namespace detail
     constexpr size_t value_stack_initial_capacity = 1 << 10;
     constexpr size_t cursor_stack_initial_capacity = 1 << 10;
 
-    template<typename CursorStack, typename ValueStack, typename ErrorStream>
-    struct parser_state
+    template<typename CursorStack, typename ValueStack, typename ErrorStream, typename Iterator>
+    struct parse_state
     {
-        constexpr parser_state(
+        constexpr parse_state(
             CursorStack& cursor_stack,
             ValueStack& value_stack,
             ErrorStream& error_stream,
-            parse_options options) :
+            parse_options options,
+            Iterator buffer_begin,
+            Iterator buffer_end):
             cursor_stack(cursor_stack),
             value_stack(value_stack),
             error_stream(error_stream),
             options(options),
-            current_sp{1, 1}
+            current_sp{1, 1},
+            current_it(buffer_begin),
+            current_term_end_it(buffer_begin),
+            buffer_end(buffer_end),
+            current_term_idx(uninitialized16),
+            recovery_mode(false),
+            consume_mode(false)
         {
             cursor_stack.reserve(cursor_stack_initial_capacity);
             value_stack.reserve(value_stack_initial_capacity);
         }
+
+        constexpr void enter_recovery_mode() { recovery_mode = true; }
+        constexpr void leave_recovery_mode() { recovery_mode = false; }
+        constexpr void enter_consume_mode() { consume_mode = true; }
+        constexpr void leave_consume_mode() { consume_mode = false; }
+        constexpr bool in_recovery_mode() const { return recovery_mode; }
+        constexpr bool in_consume_mode() const { return consume_mode; }
+
+        using iterator = Iterator;
 
         CursorStack& cursor_stack;
         ValueStack& value_stack;
         ErrorStream& error_stream;
         parse_options options;
         source_point current_sp;
+        iterator current_it;
+        iterator current_term_end_it;
+        iterator buffer_end;
+        size16_t current_term_idx;
+        bool recovery_mode;
+        bool consume_mode;
     };
 
     template<typename Buffer, size_t EmptyRulesCount>
@@ -1671,35 +1884,34 @@ namespace detail
     using parser_value_stack_type_t = typename parser_value_stack_type<Buffer, EmptyRulesCount, ValueVariantType>::type;
 }
 
-template<typename Root, typename Terms, typename NTerms, typename Rules, typename MaxStatesUsage>
+template<typename Root, typename Terms, typename NTerms, typename Rules>
 class parser
 {};
 
-template<typename RootValueType, typename... Terms, typename... NTermValueType, typename... Rules, typename MaxStatesUsage>
+namespace detail
+{
+    struct deduce_max_states
+    {
+        template<size_t TermCount, size_t... RuleSizes>
+        static const size_t value = (0 + ... + (RuleSizes + 1)) * TermCount;
+    };
+}
+
+template<typename RootValueType, typename... Terms, typename... NTerms, typename... Rules>
 class parser<
     nterm<RootValueType>,
     std::tuple<Terms...>,
-    std::tuple<nterm<NTermValueType>...>,
-    std::tuple<Rules...>,
-    MaxStatesUsage
+    std::tuple<NTerms...>,
+    std::tuple<Rules...>
 >
 {
     using term_tuple_type = std::tuple<Terms...>;
-    using nterm_tuple_type = std::tuple<nterm<NTermValueType>...>;
+    using nterm_tuple_type = std::tuple<NTerms...>;
     using rule_tuple_type = std::tuple<Rules...>;
     using root_nterm_type = nterm<RootValueType>;
     using root_value_type = RootValueType;
 
 public:
-    constexpr parser(
-        root_nterm_type root,
-        term_tuple_type terms,
-        nterm_tuple_type nterms,
-        rule_tuple_type&& rules,
-        MaxStatesUsage) :
-        parser(root, terms, nterms, std::move(rules))
-    {}
-
     constexpr parser(
         root_nterm_type root,
         term_tuple_type terms,
@@ -1714,6 +1926,7 @@ public:
         analyze_nterm(detail::fake_root<value_type_t<root_nterm_type>>{});
         analyze_terms(seq_for_terms);
         analyze_eof();
+        analyze_error_recovery_token();
         analyze_rules(std::make_index_sequence<std::tuple_size_v<rule_tuple_type>>{}, root);
         analyze_states();
 
@@ -1741,12 +1954,7 @@ public:
         detail::parser_value_stack_type_t<Buffer, empty_rules_count, value_variant_type> value_stack{};
         detail::parse_table_cursor_stack_type_t<Buffer, empty_rules_count> cursor_stack{};
 
-        detail::parser_state ps(cursor_stack, value_stack, error_stream, options);
-
-        bool error = false;
-        iterator it = buffer.begin();
-        iterator term_end = it;
-        size16_t term_idx = uninitialized16;
+        detail::parse_state ps(cursor_stack, value_stack, error_stream, options, buffer.begin(), buffer.end());
 
         ps.cursor_stack.push_back(0);
 
@@ -1755,36 +1963,46 @@ public:
         while (true)
         {
             size16_t cursor = ps.cursor_stack.back();
-            if (it == term_end)
+
+            auto t_idx = get_current_term(ps);
+            if (t_idx == uninitialized16)
+                break;
+
+            const auto& entry = parse_table[cursor][get_parse_table_idx(true, t_idx)];
+
+            if (entry.kind == parse_table_entry_kind::error)
             {
-                if (ps.options.skip_whitespace)
+                if (ps.in_consume_mode())
                 {
-                    iterator after_ws = skip_whitespace(it, buffer.end());
-                    ps.current_sp.update(it, after_ws);
-                    it = after_ws;
+                    if (!consume_term_recovering(ps))
+                        break;
+                    continue;
                 }
-
-                auto res = get_next_term(ps, it, buffer.end());
-                term_end = res.it;
-                term_idx = res.term_idx;
-
-                if (term_idx == uninitialized16)
+                if (!ps.in_recovery_mode())
                 {
-                    unexpected_char(ps, *it);
+                    syntax_error(ps);
+                    enter_recovery_mode(ps);
+                }
+                if (!pop_stacks(ps))
                     break;
-                }
-                else
-                {
-                    trace_recognized_term(ps, term_idx);
-                }
+                continue;
+            }
+            else
+            {
+                if (ps.in_consume_mode())
+                    leave_consume_mode(ps);
             }
 
-            const auto& entry = parse_table[cursor][get_parse_table_idx(true, term_idx)];
             if (entry.kind == parse_table_entry_kind::shift)
             {
-                shift(ps, buffer.get_view(it, term_end), term_idx, entry.shift);
-                ps.current_sp.update(it, term_end);
-                it = term_end;
+                shift(ps, buffer.get_view(ps.current_it, ps.current_term_end_it), t_idx, entry.shift);
+                consume_term(ps);
+            }
+            else if (entry.kind == parse_table_entry_kind::shift_error_recovery_token)
+            {
+                shift_recovery_token(ps, entry.shift);
+                leave_recovery_mode(ps);
+                enter_consume_mode(ps);
             }
             else if (entry.kind == parse_table_entry_kind::reduce)
                 reduce(ps, entry.reduce);
@@ -1793,11 +2011,6 @@ public:
             else if (entry.kind == parse_table_entry_kind::success)
             {
                 root_value = std::optional(std::move(success(ps)));
-                break;
-            }
-            else
-            {
-                syntax_error(ps, term_idx);
                 break;
             }
         }
@@ -1832,21 +2045,23 @@ public:
 
 private:
     static const size_t max_rule_element_count = meta::max_v<1, Rules::n...>;
-    static const size_t term_count = sizeof...(Terms) + 1;
-    static const size_t max_states = MaxStatesUsage::template value<term_count, Rules::n..., 1>;
     static const size16_t eof_idx = sizeof...(Terms);
-    static const size_t nterm_count = sizeof...(NTermValueType) + 1;
-    static const size16_t fake_root_idx = sizeof...(NTermValueType);
-    static const size_t rule_count = sizeof...(Rules) + 1;
+    static const size16_t error_recovery_token_idx = sizeof...(Terms) + 1;
+    static const size_t term_count = sizeof...(Terms) + 2;
+    static const size16_t fake_root_idx = sizeof...(NTerms);
+    static const size_t nterm_count = sizeof...(NTerms) + 1;
     static const size_t root_rule_idx = sizeof...(Rules);
+    static const size_t rule_count = sizeof...(Rules) + 1;
     static const size_t empty_rules_count = meta::count_zeros<Rules::n...>;
     static const size_t situation_size = max_rule_element_count + 1;
     static const size_t situation_address_space_size = rule_count * situation_size * term_count;
+    static const size_t max_states = detail::deduce_max_states::template value<term_count, Rules::n..., 1>;
     static const size_t lexer_dfa_size = (0 + ... + Terms::dfa_size);
 
     using value_variant_type = meta::unique_types_variant_t<
         std::nullptr_t,
-        NTermValueType...,
+        no_type,
+        value_type_t<NTerms>...,
         value_type_t<Terms>...
     >;
 
@@ -1900,18 +2115,24 @@ private:
         size16_t r_elements;
     };
 
-    enum class parse_table_entry_kind : size16_t { error, success, shift, reduce, rr_conflict };
+    enum class parse_table_entry_kind : size16_t { error, success, shift, shift_error_recovery_token, reduce, rr_conflict };
+
+    constexpr static bool is_shift(parse_table_entry_kind kind)
+    {
+        return kind == parse_table_entry_kind::shift || kind == parse_table_entry_kind::shift_error_recovery_token;
+    }
 
     struct parse_table_entry
     {
-        parse_table_entry_kind kind;
-        size16_t shift;
-        size16_t reduce;
-        size8_t has_shift;
-        size8_t has_reduce;
+        parse_table_entry_kind kind = parse_table_entry_kind::error;
+        size16_t shift = uninitialized16;
+        size16_t reduce = uninitialized16;
 
-        constexpr void set_shift(size16_t value) { shift = value; has_shift = 1; }
-        constexpr void set_reduce(size16_t value) { reduce = value; has_reduce = 1; }
+        bool has_shift = false;
+        bool has_reduce = false;
+
+        constexpr void set_shift(size16_t value) { shift = value; has_shift = true; }
+        constexpr void set_reduce(size16_t value) { reduce = value; has_reduce = true; }
     };
 
     constexpr static size16_t get_parse_table_idx(bool term, size16_t idx)
@@ -1925,6 +2146,14 @@ private:
         term_ids[eof_idx] = detail::eof::get_name();
         term_precedences[eof_idx] = 0;
         term_associativities[eof_idx] = associativity::no_assoc;
+    }
+
+    constexpr void analyze_error_recovery_token()
+    {
+        term_names[error_recovery_token_idx] = error_recovery_token::get_name();
+        term_ids[error_recovery_token_idx] = error_recovery_token::get_name();
+        term_precedences[error_recovery_token_idx] = 0;
+        term_associativities[error_recovery_token_idx] = associativity::no_assoc;
     }
 
     template<size16_t TermIdx, typename Term>
@@ -2292,6 +2521,10 @@ private:
             entry.kind = parse_table_entry_kind::shift;
         };
         entry.set_shift(new_state_idx);
+
+        if (entry.kind == parse_table_entry_kind::shift && s.idx == error_recovery_token_idx)
+            entry.kind = parse_table_entry_kind::shift_error_recovery_token;
+
         add_situation_to_state(new_state_idx, new_idx, situation_queue);
     }
 
@@ -2350,7 +2583,7 @@ private:
         for (size_t i = 0; i < nterm_count; ++i)
         {
             const auto& entry = parse_table[idx][i];
-            if (entry.kind == parse_table_entry_kind::shift)
+            if (is_shift(entry.kind))
                 s << "On " << nterm_names[i] << " go to " << entry.shift << "\n";
         }
         for (size_t i = nterm_count; i < nterm_count + term_count; ++i)
@@ -2365,9 +2598,9 @@ private:
                 s << " success \n";
             else if (entry.kind == parse_table_entry_kind::reduce && entry.has_shift)
                 s << " shift to " << entry.shift << " S/R CONFLICT, prefer reduce(" << rule_infos[entry.reduce].r_idx << ") over shift\n";
-            else if (entry.kind == parse_table_entry_kind::shift && entry.has_reduce)
+            else if (is_shift(entry.kind) && entry.has_reduce)
                 s << " shift to " << entry.shift << " S/R CONFLICT, prefer shift over reduce(" << rule_infos[entry.reduce].r_idx << ")\n";
-            else if (entry.kind == parse_table_entry_kind::shift)
+            else if (is_shift(entry.kind))
                 s << " shift to " << entry.shift << "\n";
             else if (entry.kind == parse_table_entry_kind::reduce)
                 s << " reduce using (" << rule_infos[entry.reduce].r_idx << ")\n";
@@ -2401,8 +2634,18 @@ private:
         );
     }
 
-    template<typename ParserState>
-    constexpr void shift(ParserState& ps, const std::string_view& sv, size16_t term_idx, size16_t new_cursor_value) const
+    template<typename ParseState>
+    constexpr void shift_recovery_token(ParseState& ps, size16_t new_cursor_value) const
+    {
+        if (ps.options.verbose)
+            ps.error_stream << ps.current_sp << " PARSE: Shift to " << new_cursor_value << ", term: " << term_names[error_recovery_token_idx] << "\n";
+        ps.cursor_stack.push_back(new_cursor_value);
+
+        ps.value_stack.emplace_back(term_value(no_type{}, ps.current_sp));
+    }
+
+    template<typename ParseState>
+    constexpr void shift(ParseState& ps, const std::string_view& sv, size16_t term_idx, size16_t new_cursor_value) const
     {
         if (ps.options.verbose)
             ps.error_stream << ps.current_sp << " PARSE: Shift to " << new_cursor_value << ", term: " << sv << "\n";
@@ -2412,8 +2655,8 @@ private:
         ps.value_stack.emplace_back(ftor(term_tuple, sv, ps.current_sp));
     }
 
-    template<typename ParserState>
-    constexpr void reduce(ParserState& ps, size16_t rule_info_idx) const
+    template<typename ParseState>
+    constexpr void reduce(ParseState& ps, size16_t rule_info_idx) const
     {
         const auto& ri = rule_infos[rule_info_idx];
         if (ps.options.verbose)
@@ -2438,8 +2681,8 @@ private:
         ps.value_stack.emplace_back(std::move(lvalue));
     }
 
-    template<typename ParserState>
-    constexpr void rr_conflict(ParserState& ps, size16_t rule_idx) const
+    template<typename ParseState>
+    constexpr void rr_conflict(ParseState& ps, size16_t rule_idx) const
     {
         if (ps.options.verbose)
         {
@@ -2448,15 +2691,39 @@ private:
         reduce(ps, rule_idx);
     }
 
-    template<typename ParserState>
-    constexpr void syntax_error(ParserState& ps, size16_t term_idx) const
+    template<typename ParseState>
+    constexpr bool pop_stacks(ParseState& ps) const
     {
-        ps.error_stream << ps.current_sp << " PARSE: Syntax error: " <<
-            "Unexpected '" << term_names[term_idx] << "'" << "\n";
+        ps.cursor_stack.pop_back();
+        if (ps.value_stack.size() != 0)
+            ps.value_stack.pop_back();
+
+        if (ps.cursor_stack.size() == 0)
+        {
+            if (ps.options.verbose)
+            {
+                ps.error_stream << ps.current_sp << " PARSE: Could not recover from error \n";
+            }
+            return false;
+        }
+
+        if (ps.options.verbose)
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Recovering to state " << ps.cursor_stack.back() << "\n";
+        }
+
+        return true;
     }
 
-    template<typename ParserState>
-    constexpr root_value_type& success(ParserState& ps) const
+    template<typename ParseState>
+    constexpr void syntax_error(ParseState& ps) const
+    {
+        ps.error_stream << ps.current_sp << " PARSE: Syntax error: " <<
+            "Unexpected '" << term_names[ps.current_term_idx] << "'" << "\n";
+    }
+
+    template<typename ParseState>
+    constexpr root_value_type& success(ParseState& ps) const
     {
         if (ps.options.verbose)
         {
@@ -2465,28 +2732,120 @@ private:
         return std::get<root_value_type>(ps.value_stack.front());
     }
 
-    template<typename ParserState, typename Iterator>
-    constexpr auto get_next_term(ParserState& ps, Iterator start, Iterator end) const
+    template<typename ParseState>
+    constexpr void consume_term(ParseState& ps) const
     {
-        if (start == end)
+        ps.current_sp.update(ps.current_it, ps.current_term_end_it);
+        ps.current_it = ps.current_term_end_it;
+    }
+
+    template<typename ParseState>
+    constexpr void enter_recovery_mode(ParseState& ps) const
+    {
+        if (ps.options.verbose)
         {
-            return regex::recognized_term<Iterator>{ end, eof_idx };
+            ps.error_stream << ps.current_sp << " PARSE: Entering recovery mode \n";
+        }
+        ps.enter_recovery_mode();
+    }
+
+    template<typename ParseState>
+    constexpr void leave_recovery_mode(ParseState& ps) const
+    {
+        if (ps.options.verbose)
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Leaving recovery mode \n";
+        }
+        ps.leave_recovery_mode();
+    }
+
+    template<typename ParseState>
+    constexpr void enter_consume_mode(ParseState& ps) const
+    {
+        if (ps.options.verbose)
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Entering consume mode \n";
+        }
+        ps.enter_consume_mode();
+    }
+
+    template<typename ParseState>
+    constexpr void leave_consume_mode(ParseState& ps) const
+    {
+        if (ps.options.verbose)
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Leaving consume mode \n";
+        }
+        ps.leave_consume_mode();
+    }
+
+    template<typename ParseState>
+    constexpr bool consume_term_recovering(ParseState& ps) const
+    {
+        if (ps.current_term_idx == eof_idx)
+            return false;
+        if (ps.options.verbose)
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Recovery, consuming term " << term_names[ps.current_term_idx] << " \n";
+        }
+        consume_term(ps);
+        return true;
+    }
+
+    template<typename ParseState>
+    constexpr size16_t get_current_term(ParseState& ps) const
+    {
+        if (ps.in_recovery_mode())
+            return error_recovery_token_idx;
+
+        if (ps.current_it != ps.current_term_end_it)
+            return ps.current_term_idx;
+
+        if (ps.options.skip_whitespace)
+        {
+            auto after_ws = skip_whitespace(ps);
+            ps.current_sp.update(ps.current_it, after_ws);
+            ps.current_it = after_ws;
+        }
+
+        using res_type = regex::recognized_term<typename ParseState::iterator>;
+
+        if (ps.current_it == ps.buffer_end)
+        {
+            ps.current_term_idx = eof_idx;
+            trace_recognized_term(ps);
+            return eof_idx;
         }
 
         regex::match_options opts;
         opts.set_verbose(ps.options.verbose);
         opts.sp = ps.current_sp;
-        return regex::dfa_match(lexer_sm, opts, start, end, ps.error_stream);
+        auto res = regex::dfa_match(lexer_sm, opts, ps.current_it, ps.buffer_end, ps.error_stream);
+        ps.current_term_end_it = res.it;
+        ps.current_term_idx = res.term_idx;
+
+        if (ps.current_term_idx == uninitialized16)
+        {
+            unexpected_char(ps);
+            return uninitialized16;
+        }
+        else
+        {
+            trace_recognized_term(ps);
+        }
+
+        return ps.current_term_idx;
     }
 
-    template<typename Iterator>
-    constexpr Iterator skip_whitespace(Iterator start, Iterator end) const
+    template<typename ParseState>
+    constexpr auto skip_whitespace(ParseState& ps) const
     {
         constexpr char space_chars[] = { 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0x00 };
 
+        auto start = ps.current_it;
         while (true)
         {
-            if (start == end)
+            if (start == ps.buffer_end)
                 break;
             if (utils::find_char(*start, space_chars) == uninitialized)
                 break;
@@ -2495,17 +2854,17 @@ private:
         return start;
     }
 
-    template<typename ParserState>
-    constexpr void unexpected_char(ParserState& ps, char c) const
+    template<typename ParseState>
+    constexpr void unexpected_char(ParseState& ps) const
     {
-        ps.error_stream << ps.current_sp << " PARSE: Unexpected character: " << c << "\n";
+        ps.error_stream << ps.current_sp << " PARSE: Unexpected character: " << *ps.current_it << "\n";
     }
 
-    template<typename ParserState>
-    constexpr void trace_recognized_term(ParserState& ps, size16_t term_idx) const
+    template<typename ParseState>
+    constexpr void trace_recognized_term(ParseState& ps) const
     {
         if (ps.options.verbose)
-            ps.error_stream << ps.current_sp << " PARSE: Recognized " << term_names[term_idx] << " \n";
+            ps.error_stream << ps.current_sp << " PARSE: Recognized " << term_names[ps.current_term_idx] << " \n";
     }
 
     struct no_parser{};
@@ -2560,24 +2919,8 @@ private:
     dfa_type lexer_sm = {};
 };
 
-template<size_t S>
-struct use_max_states
-{
-    template<size_t, size_t...>
-    static const size_t value = S;
-};
-
-struct deduce_max_states
-{
-    template<size_t TermCount, size_t... RuleSizes>
-    static const size_t value = (0 + ... + (RuleSizes + 1)) * TermCount;
-};
-
 template<typename Root, typename Terms, typename NTerms, typename Rules>
-parser(Root, Terms, NTerms, Rules&&) -> parser<Root, Terms, NTerms, Rules, deduce_max_states>;
-
-template<typename Root, typename Terms, typename NTerms, typename Rules, typename MaxStatesUsage>
-parser(Root, Terms, NTerms, Rules&&, MaxStatesUsage) -> parser<Root, Terms, NTerms, Rules, MaxStatesUsage>;
+parser(Root, Terms, NTerms, Rules&&) -> parser<Root, Terms, NTerms, Rules>;
 
 template<typename... Terms>
 constexpr auto terms(const Terms&... terms)
@@ -2602,93 +2945,6 @@ struct skip
     template<typename T>
     constexpr skip(T&&) {};
 };
-
-namespace ftors
-{
-    template<size_t>
-    struct ignore
-    {
-        template<typename T>
-        constexpr ignore(T&&){}
-    };
-
-    template<size_t X, typename = std::make_index_sequence<X - 1>>
-    class element
-    {};
-
-    template<size_t X, size_t... I>
-    class element<X, std::index_sequence<I...>>
-    {
-    public:
-        template<typename First, typename... Rest>
-        constexpr decltype(auto) operator ()(ignore<I>..., First&& arg, Rest&&...) const
-        {
-            return std::forward<First>(arg);
-        }
-    };
-
-    constexpr element<1> _e1;
-    constexpr element<2> _e2;
-    constexpr element<3> _e3;
-    constexpr element<4> _e4;
-    constexpr element<5> _e5;
-    constexpr element<6> _e6;
-    constexpr element<7> _e7;
-    constexpr element<8> _e8;
-    constexpr element<9> _e9;
-
-    template<typename T>
-    class val
-    {
-    public:
-        constexpr val(T&& v):
-            v(std::forward<T>(v))
-        {}
-
-        template<typename... Args>
-        constexpr auto operator ()(Args&&...) const
-        {
-            return v;
-        }
-
-    private:
-        T v;
-    };
-
-    template<typename T>
-    val(T&&) -> val<std::decay_t<T>>;
-
-    template<typename T>
-    class create
-    {
-    public:
-        template<typename... Args>
-        constexpr auto operator ()(Args&&...) const
-        {
-            return T{};
-        }
-    };
-
-    struct emplace_back
-    {
-        template<typename L, typename I>
-        L&& operator()(L&& list, I&& item) const
-        {
-            list.emplace_back(std::move(item));
-            return std::move(list);
-        }
-    };
-
-    struct push_back
-    {
-        template<typename L, typename I>
-        L&& operator()(L&& list, const I& item) const
-        {
-            list.push_back(item);
-            return std::move(list);
-        }
-    };
-}
 
 namespace regex
 {
@@ -2776,8 +3032,7 @@ namespace regex
                 alt(concat),
                 alt(alt, '|', alt) >= [&b](slice p1, skip, slice p2) { return b.alt(p1, p2); },
                 expr(alt)
-            ),
-            deduce_max_states{}
+            )
         );
     }
 }
