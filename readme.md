@@ -741,6 +741,17 @@ constexpr parser p(
 );
 ```
 
+Both ```push_back``` an ```emplace_back``` are class templates, which take two indexes (like in case of element placeholders one-indexed), 
+denoting element numbers for the list and the value to append.
+
+So in case of comma separeted numbers, we can simply use:
+```c++
+rules(
+    list() >= create<std::vector<int>>{},
+    list(list, ',', number) >= push_back<1, 3>{}  // 1 is the list, 3 is the number
+)
+```
+
 ## Default functors
 
 There is a situation where the functor can be entirely omitted, that is whenever a left side value type is _move constructible_ from right side value types:
