@@ -49,7 +49,7 @@ constexpr nterm<int> list("list");
 constexpr char number_pattern[] = "[1-9][0-9]*";
 constexpr regex_term<number_pattern> number("number");
 
-int to_int(const std::string_view& sv)
+int to_int(std::string_view sv)
 {
     int i = 0;
     std::from_chars(sv.data(), sv.data() + sv.size(), i);
@@ -231,7 +231,7 @@ for both ```regex_term``` and ```string_term```.
 
 The ```term_value``` class template is a simple wrapper that is implicitly convertible to it's template parameter (either a ```char``` or ```std::string_view```).
 That's why when providing functors we can simply declare arguments as either a ```char``` or a ```std::string_view```.
-In our case the ```to_int``` functor has a ```const std::string_view&``` argument, which accepts a ```term_value<std::string_view>``` just fine.
+In our case the ```to_int``` functor has a ```std::string_view``` argument, which accepts a ```term_value<std::string_view>``` just fine.
 Of course an ```auto``` in case of lambda will always do the trick.
 
 The advantage of declaring functor arguments as ```term_value``` specialization is that we can access other features (like [source tracking](#source-tracking)) using the ```term_value``` methods.
@@ -269,7 +269,7 @@ First, all the functors need to be constexpr.
 To achieve this change the ```to_int``` function to:
 
 ```c++
-constexpr int to_int(const std::string_view& sv)
+constexpr int to_int(std::string_view sv)
 {
     int sum = 0;
     for (auto c : sv) { sum *= 10; sum += c - '0'; }
