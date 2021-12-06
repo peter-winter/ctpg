@@ -10,7 +10,7 @@ constexpr nterm<int> list("list");
 constexpr char number_pattern[] = "[1-9][0-9]*";
 constexpr regex_term<number_pattern> number("number");
 
-constexpr int to_int(const std::string_view& sv)
+constexpr int to_int(std::string_view sv)
 {
     int sum = 0;
     for (auto c : sv) { sum *= 10; sum += c - '0'; }
