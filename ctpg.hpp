@@ -834,11 +834,11 @@ public:
     static const size_t pattern_size = std::size(Pattern);
 
     constexpr regex_term(associativity a = associativity::no_assoc) :
-        term(0, a)
+        regex_term(nullptr, 0, a)
     {}
 
     constexpr regex_term(int precedence = 0, associativity a = associativity::no_assoc) :
-        term(precedence, a)
+        regex_term(nullptr, precedence, a)
     {}
 
     constexpr regex_term(const char *custom_name, int precedence = 0, associativity a = associativity::no_assoc) :
