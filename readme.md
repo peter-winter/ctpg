@@ -944,8 +944,9 @@ struct plus_tag{};
 typed_term plus(char_term('+'), create<plus_tag>{});
 ```
 
-The ```create``` is a functor available in the ```ctpg::ftors``` namespace, which simply creates an object of given type using a default constructor of that type.
-In fact any callble object can be used instead of ```create```, this is just an example.
+The ```create``` is a functor available in the ```ctpg::ftors``` namespace, which simply creates an object of given type using a default constructor of that type
+and ignoring all passed arguments to it.
+In fact any callble object which accepts ```std::string_view``` can be used instead of ```create```, this is just an example.
 The ```plus``` term has a value type identical to the return type of the functor, ```plus_tag``` in this case.
 
 Take a look at the **`typed_terms.cpp`** in the examples, it uses this feature to create a simple calculator, but instead of the
