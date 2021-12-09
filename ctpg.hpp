@@ -1439,7 +1439,12 @@ namespace regex
         size_t idx)
     {
         using slice = utils::slice;
-        std::optional<slice> res = p.parse(buffers::cstring_buffer(pattern_data.pattern));
+        detail::no_stream s{};
+        std::optional<slice> res = p.parse(
+            parse_options{}.set_skip_whitespace(false),
+            buffers::cstring_buffer(pattern_data.pattern),
+            s
+        );
 
         if (res.has_value())
         {
@@ -1460,7 +1465,11 @@ namespace regex
         dfa_size_analyzer a;
         auto p = create_regex_parser(a);
         buffers::cstring_buffer buffer(pattern);
-        auto res = p.parse(buffer);
+        detail::no_stream s{};
+        auto res = p.parse(
+            parse_options{}.set_skip_whitespace(false),
+            buffer,
+            s);
         if (!res.has_value())
             throw std::runtime_error("invalid regex");
         return res.value().n;
@@ -1614,7 +1623,12 @@ namespace regex
         {
             dfa_builder<dfa_size> b(sm);
             auto p = create_regex_parser(b);
-            auto s = p.parse(buffers::cstring_buffer(Pattern));
+            detail::no_stream stream{};
+            auto s = p.parse(
+                parse_options{}.set_skip_whitespace(false),
+                buffers::cstring_buffer(Pattern),
+                stream
+            );
             if (!s.has_value())
                 throw std::runtime_error("invalid regex");
             b.mark_end_states(s.value(), 0);
@@ -1625,7 +1639,11 @@ namespace regex
         {
             regex::dfa_size_analyzer a;
             auto p = regex::create_regex_parser(a);
-            p.parse(parse_options{}.set_verbose(), buffers::cstring_buffer(Pattern), s);
+            p.parse(
+                parse_options{}.set_skip_whitespace(false).set_verbose(),
+                buffers::cstring_buffer(Pattern),
+                s
+            );
         }
 
         template<size_t N>
