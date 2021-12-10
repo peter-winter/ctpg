@@ -2405,6 +2405,8 @@ private:
         state_count = 1;
 
         situation_queue_t situation_queue = { };
+        stdex::cvector<size16_t, situation_address_space_size> closures[situation_address_space_size] = {};
+        stdex::cbitset<situation_address_space_size> done_closures = {};
 
         add_situation_to_state(0, idx, situation_queue);
 
@@ -2412,13 +2414,14 @@ private:
         {
             const auto& entry = situation_queue.top();
             situation_queue.pop();
-            analyze_situation(entry.state_idx, entry.idx, situation_queue);
+            analyze_situation(entry.state_idx, entry.idx, situation_queue, closures, done_closures);
         }
     }
 
-    constexpr void analyze_situation(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue)
+    template<typename Closures, typename DoneClosures>
+    constexpr void analyze_situation(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue, Closures& closures, DoneClosures& done_closures)
     {
-        situation_closure(state_idx, idx, situation_queue);
+        situation_closure(state_idx, idx, situation_queue, closures, done_closures);
         situation_transition(state_idx, idx, situation_queue);
     }
 
@@ -2432,8 +2435,18 @@ private:
         }
     }
 
-    constexpr void situation_closure(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue)
+    template<typename Closures, typename DoneClosures>
+    constexpr void situation_closure(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue, Closures& closures, DoneClosures& done_closures)
     {
+        if (done_closures.test(idx))
+        {
+            for(auto i = 0u; i < closures[idx].size(); ++i)
+                add_situation_to_state(state_idx, closures[idx][i], situation_queue);
+            return;
+        }
+
+        done_closures.set(idx);
+
         situation_info addr = make_situation_info(idx);
         const rule_info& ri = rule_infos[addr.rule_info_idx];
         if (addr.after >= ri.r_elements)
@@ -2453,6 +2466,7 @@ private:
                     {
                         size32_t new_s_idx = make_situation_idx(situation_info{ size16_t(s.start + i), 0, t });
                         add_situation_to_state(state_idx, new_s_idx, situation_queue);
+                        closures[idx].push_back(new_s_idx);
                     }
                 }
             }
