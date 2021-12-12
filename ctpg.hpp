@@ -2291,6 +2291,21 @@ private:
         }
     }
 
+    struct state_analyze_info
+    {
+        situation_queue_t situation_queue = { };
+        stdex::cvector<size16_t, situation_address_space_size> closures[situation_address_space_size] = {};
+        stdex::cbitset<situation_address_space_size> done_closures = {};
+        term_subset situation_first_after[situation_address_space_size] = { };
+        situation_set situation_first_after_analyzed = {};
+        term_subset right_side_slice_first[situation_size * rule_count] = {};
+        right_side_slice_subset right_side_slice_first_analyzed = {};
+        nterm_subset nterm_empty = { };
+        term_subset nterm_first[nterm_count] = { };
+        nterm_subset nterm_empty_analyzed = { };
+        nterm_subset nterm_first_analyzed = { };
+    };
+
     constexpr size32_t make_situation_idx(situation_info a) const
     {
         return a.rule_info_idx * situation_size * term_count + a.after * term_count + a.t;
@@ -2311,14 +2326,14 @@ private:
             dest.set(i, dest.test(i) || source.test(i));
     }
 
-    constexpr const term_subset& make_right_side_slice_first(const rule_info& ri, size_t start)
+    constexpr const term_subset& make_right_side_slice_first(const rule_info& ri, size_t start, state_analyze_info& sai)
     {
         size_t right_side_slice_idx = max_rule_element_count * ri.r_idx + start;
-        auto& res = right_side_slice_first[right_side_slice_idx];
+        auto& res = sai.right_side_slice_first[right_side_slice_idx];
 
-        if (right_side_slice_first_analyzed.test(right_side_slice_idx))
+        if (sai.right_side_slice_first_analyzed.test(right_side_slice_idx))
             return res;
-        right_side_slice_first_analyzed.set(right_side_slice_idx);
+        sai.right_side_slice_first_analyzed.set(right_side_slice_idx);
 
         for (size_t i = start; i < ri.r_elements; ++i)
         {
@@ -2328,74 +2343,74 @@ private:
                 res.set(s.idx);
                 break;
             }
-            add_term_subset(res, make_nterm_first(s.idx));
-            if (!make_nterm_empty(s.idx))
+            add_term_subset(res, make_nterm_first(s.idx, sai));
+            if (!make_nterm_empty(s.idx, sai))
                 break;
         }
         return res;
     }
 
-    constexpr const term_subset& make_nterm_first(size16_t nt)
+    constexpr const term_subset& make_nterm_first(size16_t nt, state_analyze_info& sai)
     {
-        if (nterm_first_analyzed.test(nt))
-            return nterm_first[nt];
-        nterm_first_analyzed.set(nt);
+        if (sai.nterm_first_analyzed.test(nt))
+            return sai.nterm_first[nt];
+        sai.nterm_first_analyzed.set(nt);
 
         const utils::slice& s = nterm_rule_slices[nt];
         for (size_t i = 0u; i < s.n; ++i)
         {
             const rule_info& ri = rule_infos[s.start + i];
-            add_term_subset(nterm_first[nt], make_right_side_slice_first(ri, 0));
+            add_term_subset(sai.nterm_first[nt], make_right_side_slice_first(ri, 0, sai));
         }
-        return nterm_first[nt];
+        return sai.nterm_first[nt];
     }
 
-    constexpr bool is_right_side_slice_empty(const rule_info& ri, size_t start)
+    constexpr bool is_right_side_slice_empty(const rule_info& ri, size_t start, state_analyze_info& sai)
     {
         for (size_t i = start; i < ri.r_elements; ++i)
         {
             const symbol& s = right_sides[ri.r_idx][i];
             if (s.term)
                 return false;
-            if (!make_nterm_empty(s.idx))
+            if (!make_nterm_empty(s.idx, sai))
                 return false;
         }
         return true;
     }
 
-    constexpr bool is_right_side_empty(const rule_info& ri)
+    constexpr bool is_right_side_empty(const rule_info& ri, state_analyze_info& sai)
     {
-        return is_right_side_slice_empty(ri, 0);
+        return is_right_side_slice_empty(ri, 0, sai);
     }
 
-    constexpr bool make_nterm_empty(size16_t nt)
+    constexpr bool make_nterm_empty(size16_t nt, state_analyze_info& sai)
     {
-        if (nterm_empty_analyzed.test(nt))
-            return nterm_empty.test(nt);
-        nterm_empty_analyzed.set(nt);
+        if (sai.nterm_empty_analyzed.test(nt))
+            return sai.nterm_empty.test(nt);
+        sai.nterm_empty_analyzed.set(nt);
 
         const utils::slice& s = nterm_rule_slices[nt];
         for (size_t i = 0u; i < s.n; ++i)
         {
-            if (is_right_side_empty(rule_infos[s.start + i]))
+            if (is_right_side_empty(rule_infos[s.start + i], sai))
             {
-                return (nterm_empty.set(nt), true);
+                return (sai.nterm_empty.set(nt), true);
             }
         }
-        return (nterm_empty.reset(nt), false);
+        return (sai.nterm_empty.reset(nt), false);
     }
 
-    constexpr const term_subset& make_situation_first_after(const situation_info& addr, size32_t idx)
+    constexpr const term_subset& make_situation_first_after(const situation_info& addr, size32_t idx, state_analyze_info& sai)
     {
-        if (situation_first_after_analyzed.test(idx))
-            return situation_first_after[idx];
-        situation_first_after_analyzed.set(idx);
+        if (sai.situation_first_after_analyzed.test(idx))
+            return sai.situation_first_after[idx];
+        sai.situation_first_after_analyzed.set(idx);
 
         const rule_info& ri = rule_infos[addr.rule_info_idx];
-        add_term_subset(situation_first_after[idx], make_right_side_slice_first(ri, addr.after + 1));
-        if (is_right_side_slice_empty(ri, addr.after + 1))
-            situation_first_after[idx].set(addr.t);
-        return situation_first_after[idx];
+        add_term_subset(sai.situation_first_after[idx], make_right_side_slice_first(ri, addr.after + 1, sai));
+        if (is_right_side_slice_empty(ri, addr.after + 1, sai))
+            sai.situation_first_after[idx].set(addr.t);
+        return sai.situation_first_after[idx];
     }
 
     constexpr void analyze_states()
@@ -2404,48 +2419,42 @@ private:
         size32_t idx = make_situation_idx(root_situation_info);
         state_count = 1;
 
-        situation_queue_t situation_queue = { };
-        stdex::cvector<size16_t, situation_address_space_size> closures[situation_address_space_size] = {};
-        stdex::cbitset<situation_address_space_size> done_closures = {};
+        state_analyze_info sai;
 
-        add_situation_to_state(0, idx, situation_queue);
+        add_situation_to_state(0, idx, sai);
 
-        while (!situation_queue.empty())
+        while (!sai.situation_queue.empty())
         {
-            const auto& entry = situation_queue.top();
-            situation_queue.pop();
-            analyze_situation(entry.state_idx, entry.idx, situation_queue, closures, done_closures);
+            const auto& entry = sai.situation_queue.top();
+            sai.situation_queue.pop();
+
+            situation_closure(entry.state_idx, entry.idx, sai);
+            situation_transition(entry.state_idx, entry.idx, sai);
         }
     }
 
-    template<typename Closures, typename DoneClosures>
-    constexpr void analyze_situation(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue, Closures& closures, DoneClosures& done_closures)
-    {
-        situation_closure(state_idx, idx, situation_queue, closures, done_closures);
-        situation_transition(state_idx, idx, situation_queue);
-    }
-
-    constexpr void add_situation_to_state(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue)
+    constexpr void add_situation_to_state(size16_t state_idx, size32_t idx, state_analyze_info& sai)
     {
         state& s = states[state_idx];
         if (!s.test(idx))
         {
             s.set(idx);
-            situation_queue.push({ state_idx, idx });
+            sai.situation_queue.push({ state_idx, idx });
         }
     }
 
-    template<typename Closures, typename DoneClosures>
-    constexpr void situation_closure(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue, Closures& closures, DoneClosures& done_closures)
+    constexpr void situation_closure(size16_t state_idx, size32_t idx, state_analyze_info& sai)
     {
-        if (done_closures.test(idx))
+        if (sai.done_closures.test(idx))
         {
-            for(auto i = 0u; i < closures[idx].size(); ++i)
-                add_situation_to_state(state_idx, closures[idx][i], situation_queue);
+            for(auto i = 0u; i < sai.closures[idx].size(); ++i)
+            {
+                add_situation_to_state(state_idx, sai.closures[idx][i], sai);
+            }
             return;
         }
 
-        done_closures.set(idx);
+        sai.done_closures.set(idx);
 
         situation_info addr = make_situation_info(idx);
         const rule_info& ri = rule_infos[addr.rule_info_idx];
@@ -2456,7 +2465,7 @@ private:
         if (!s.term)
         {
             size16_t nt = s.idx;
-            const term_subset& first = make_situation_first_after(addr, idx);
+            const term_subset& first = make_situation_first_after(addr, idx, sai);
             const utils::slice& s = nterm_rule_slices[nt];
             for (auto i = 0u; i < s.n; ++i)
             {
@@ -2465,8 +2474,8 @@ private:
                     if (first.test(t))
                     {
                         size32_t new_s_idx = make_situation_idx(situation_info{ size16_t(s.start + i), 0, t });
-                        add_situation_to_state(state_idx, new_s_idx, situation_queue);
-                        closures[idx].push_back(new_s_idx);
+                        add_situation_to_state(state_idx, new_s_idx, sai);
+                        sai.closures[idx].push_back(new_s_idx);
                     }
                 }
             }
@@ -2489,7 +2498,7 @@ private:
         return parse_table_entry_kind::shift;
     }
 
-    constexpr void situation_transition(size16_t state_idx, size32_t idx, situation_queue_t& situation_queue)
+    constexpr void situation_transition(size16_t state_idx, size32_t idx, state_analyze_info& sai)
     {
         situation_info addr = make_situation_info(idx);
         const rule_info& ri = rule_infos[addr.rule_info_idx];
@@ -2525,7 +2534,7 @@ private:
 
         if (entry.has_shift)
         {
-            add_situation_to_state(entry.shift, new_idx, situation_queue);
+            add_situation_to_state(entry.shift, new_idx, sai);
             return;
         }
 
@@ -2557,7 +2566,7 @@ private:
         if (entry.kind == parse_table_entry_kind::shift && s.idx == error_recovery_token_idx)
             entry.kind = parse_table_entry_kind::shift_error_recovery_token;
 
-        add_situation_to_state(new_state_idx, new_idx, situation_queue);
+        add_situation_to_state(new_state_idx, new_idx, sai);
     }
 
     constexpr const char* get_symbol_name(const symbol& s) const
@@ -2921,14 +2930,6 @@ private:
     symbol right_sides[rule_count][max_rule_element_count] = { };
     rule_info rule_infos[rule_count] = { };
     utils::slice nterm_rule_slices[nterm_count] = { };
-    term_subset situation_first_after[situation_address_space_size] = { };
-    situation_set situation_first_after_analyzed = {};
-    term_subset right_side_slice_first[situation_size * rule_count] = {};
-    right_side_slice_subset right_side_slice_first_analyzed = {};
-    nterm_subset nterm_empty = { };
-    term_subset nterm_first[nterm_count] = { };
-    nterm_subset nterm_empty_analyzed = { };
-    nterm_subset nterm_first_analyzed = { };
     state states[max_states] = { };
     parse_table_entry parse_table[max_states][term_count + nterm_count] = {};
     size16_t state_count = 0;
