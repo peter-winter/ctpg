@@ -1021,7 +1021,7 @@ use the following supported features (in precedence descending order):
 | Optional                    | ```a?```         | optional ```a``` character                  |
 | Repetition (defined number) | ```a{4}```       | 4 ```a``` characters                        |
 | Alternative                 | ```a\|b```       | ```a``` character or ```b``` character      |
-| Grouping                    | ```(a\|b)*```    | anu number of ```a``` or ```b``` characters |
+| Grouping                    | ```(a\|b)*```    | any number of ```a``` or ```b``` characters |
 
 ## Diagnostics
 
