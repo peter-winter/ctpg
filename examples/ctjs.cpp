@@ -7,6 +7,12 @@ Compile Time JSON Parser example
 #include <iostream>
 #include <variant>
 
+template<typename = void> // just so it doesn't complain it's not a constexpr function
+constexpr void invalid_unicode_sequence()
+{
+    throw std::runtime_error("invalid string: surrogate [\\ud800-\\udbff] must be followed by [\\udc00-\\udfff]");
+}
+
 namespace ctjs
 {
     template<typename... Ts> struct overloaded : Ts... { using Ts::operator()...; };
@@ -23,7 +29,7 @@ namespace ctjs
     struct object_tag { idx_t size; };
 
     using chunk = std::variant<
-        nullptr_t,
+        std::nullptr_t,
         bool,
         double,
         string_info,
@@ -195,12 +201,6 @@ namespace ctjs
             return (f(sv[0]) << 12) | (f(sv[1]) << 8) | (f(sv[2]) << 4 )| f(sv[3]);
         }
 
-        template<typename = void> // just so it doesn't complain it's not a constexpr function
-        constexpr void invalid_unicode_sequence()
-        {
-            throw std::runtime_error("invalid string: surrogate [\\ud800-\\udbff] must be followed by [\\udc00-\\udfff]");
-        }
-
         idx_t idx = 0;
         idx_t string_memory_idx = 0;
         chunk* chunks;
@@ -328,7 +328,7 @@ namespace ctjs
         constexpr auto as_string() const { return json_string<N>(get_string(0)); }
         constexpr bool as_bool() const { return std::get<bool>(chunks[0]); }
         constexpr double as_number() const { return std::get<double>(chunks[0]); }
-        constexpr nullptr_t as_null() const { return std::get<nullptr_t>(chunks[0]); }
+        constexpr std::nullptr_t as_null() const { return std::get<std::nullptr_t>(chunks[0]); }
 
     private:
         constexpr idx_t value_size(idx_t element_idx) const
@@ -387,7 +387,7 @@ namespace ctjs
             for (const auto& v: chunks)
             {
                 std::visit(overloaded {
-                    [&s](nullptr_t) { s << "null" << ' '; },
+                    [&s](std::nullptr_t) { s << "null" << ' '; },
                     [&s](double d) { s << d << ' '; },
                     [&s](bool b) { s << (b ? "true" : "false") << ' '; },
                     [&s, this](string_info si) { s << "\"" << std::string_view(&(string_memory[si.start]), si.end - si.start) << "\" "; },
