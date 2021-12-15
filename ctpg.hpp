@@ -804,62 +804,11 @@ protected:
     associativity ass;
 };
 
-namespace regex
-{
-    template<size_t N>
-    constexpr size32_t analyze_dfa_size(const char (&pattern)[N]);
-
-    template<size_t N>
-    struct regex_pattern_data
-    {
-        const char (&pattern)[N];
-    };
-}
-
 namespace detail
 {
     constexpr std::string_view pass_sv(const std::string_view& sv) { return sv; }
     constexpr char first_sv_char(const std::string_view& sv) { return sv[0]; }
 }
-
-template<auto& Pattern>
-class regex_term : public term
-{
-public:
-    using internal_value_type = std::string_view;
-
-    static const size_t dfa_size = regex::analyze_dfa_size(Pattern);
-    static const bool is_trivial = false;
-
-    static const size_t pattern_size = std::size(Pattern);
-
-    constexpr regex_term(associativity a = associativity::no_assoc) :
-        regex_term(nullptr, 0, a)
-    {}
-
-    constexpr regex_term(int precedence = 0, associativity a = associativity::no_assoc) :
-        regex_term(nullptr, precedence, a)
-    {}
-
-    constexpr regex_term(const char *custom_name, int precedence = 0, associativity a = associativity::no_assoc) :
-        term(precedence, a),
-        custom_name(custom_name)
-    {
-        id[0] = 'r';
-        id[1] = '_';
-        utils::copy_array(&id[2], Pattern, std::make_index_sequence<pattern_size>{});
-    }
-
-    constexpr const char* get_name() const { return custom_name ? custom_name : id; }
-    constexpr const char* get_id() const { return id; }
-    constexpr auto get_data() const { return regex::regex_pattern_data<pattern_size>{ Pattern }; }
-
-    constexpr const auto& get_ftor() const { return detail::pass_sv; }
-
-private:
-    char id[pattern_size + 2] = {};
-    const char* custom_name = nullptr;
-};
 
 class char_term : public term
 {
@@ -1317,6 +1266,12 @@ namespace regex
         dfa<N>& sm;
     };
 
+    template<size_t N>
+    struct regex_pattern_data
+    {
+        const char (&pattern)[N];
+    };
+
     struct regex_regular_chars_data
     {
         constexpr static char special_chars[] = "\\[]^-.*+?|(){}abcdefABCDEF0123456789x";
@@ -1456,25 +1411,6 @@ namespace regex
             throw std::runtime_error("Regex parse error");
     }
 
-    template<typename Builder>
-    constexpr auto create_regex_parser(Builder& b);
-
-    template<size_t N>
-    constexpr size32_t analyze_dfa_size(const char (&pattern)[N])
-    {
-        dfa_size_analyzer a;
-        auto p = create_regex_parser(a);
-        buffers::cstring_buffer buffer(pattern);
-        detail::no_stream s{};
-        auto res = p.parse(
-            parse_options{}.set_skip_whitespace(false),
-            buffer,
-            s);
-        if (!res.has_value())
-            throw std::runtime_error("invalid regex");
-        return res.value().n;
-    }
-
     struct match_options
     {
         bool verbose = false;
@@ -1605,91 +1541,8 @@ namespace regex
         write_dfa_diag_str(sm, stream, utils::fake_table<const char*>{""});
     }
 
-    template<typename Stream>
-    constexpr void write_regex_parser_diag_msg(Stream& s)
-    {
-        regex::dfa_size_analyzer a;
-        auto p = regex::create_regex_parser(a);
-        p.write_diag_str(s);
-    }
-
-    template<auto& Pattern>
-    class expr
-    {
-    public:
-        static const size32_t dfa_size = analyze_dfa_size(Pattern);
-
-        constexpr expr()
-        {
-            dfa_builder<dfa_size> b(sm);
-            auto p = create_regex_parser(b);
-            detail::no_stream stream{};
-            auto s = p.parse(
-                parse_options{}.set_skip_whitespace(false),
-                buffers::cstring_buffer(Pattern),
-                stream
-            );
-            if (!s.has_value())
-                throw std::runtime_error("invalid regex");
-            b.mark_end_states(s.value(), 0);
-        }
-
-        template<typename Stream>
-        constexpr void debug_parse(Stream& s) const
-        {
-            regex::dfa_size_analyzer a;
-            auto p = regex::create_regex_parser(a);
-            p.parse(
-                parse_options{}.set_skip_whitespace(false).set_verbose(),
-                buffers::cstring_buffer(Pattern),
-                s
-            );
-        }
-
-        template<size_t N>
-        constexpr bool match(const char (&str)[N]) const
-        {
-            return match(buffers::cstring_buffer(str));
-        }
-
-        template<typename Buffer>
-        constexpr bool match(const Buffer& buf) const
-        {
-            detail::no_stream s;
-            return match(buf, s);
-        }
-
-        template<typename Buffer, typename Stream>
-        constexpr bool match(const Buffer& buf, Stream& s) const
-        {
-            return match(match_options{}, buf, s);
-        }
-
-        template<typename Buffer, typename Stream>
-        constexpr bool match(match_options opts, const Buffer& buf, Stream& s) const
-        {
-            auto res = dfa_match(sm, opts, buf.begin(), buf.end(), s);
-            if (res.term_idx == 0 && res.it == buf.end())
-                return true;
-            else
-            {
-                if (res.term_idx == 0)
-                    s << "Leftover text after recognition: " << buf.get_view(res.it, buf.end()) << "\n";
-                else
-                    s << "Unexpected char: " << utils::c_names.name(*res.it) << "\n";
-                return false;
-            }
-        }
-
-        template<typename Stream>
-        constexpr void write_diag_str(Stream& stream) const
-        {
-            regex::write_dfa_diag_str(sm, stream);
-        }
-
-    private:
-        dfa<dfa_size> sm;
-    };
+    template<typename Builder>
+    constexpr auto create_regex_parser(Builder& b);
 }
 
 namespace detail
@@ -3068,7 +2921,148 @@ namespace regex
             )
         );
     }
+
+    template<size_t N>
+    constexpr size32_t analyze_dfa_size(const char (&pattern)[N])
+    {
+        dfa_size_analyzer a;
+        auto p = create_regex_parser(a);
+        buffers::cstring_buffer buffer(pattern);
+        detail::no_stream s{};
+        auto res = p.parse(
+            parse_options{}.set_skip_whitespace(false),
+            buffer,
+            s);
+        if (!res.has_value())
+            throw std::runtime_error("invalid regex");
+        return res.value().n;
+    }
+
+    template<typename Stream>
+    constexpr void write_regex_parser_diag_msg(Stream& s)
+    {
+        regex::dfa_size_analyzer a;
+        auto p = regex::create_regex_parser(a);
+        p.write_diag_str(s);
+    }
+
+    template<auto& Pattern>
+    class expr
+    {
+    public:
+        static const size32_t dfa_size = analyze_dfa_size(Pattern);
+
+        constexpr expr()
+        {
+            dfa_builder<dfa_size> b(sm);
+            auto p = create_regex_parser(b);
+            detail::no_stream stream{};
+            auto s = p.parse(
+                parse_options{}.set_skip_whitespace(false),
+                buffers::cstring_buffer(Pattern),
+                stream
+            );
+            if (!s.has_value())
+                throw std::runtime_error("invalid regex");
+            b.mark_end_states(s.value(), 0);
+        }
+
+        template<typename Stream>
+        constexpr void debug_parse(Stream& s) const
+        {
+            regex::dfa_size_analyzer a;
+            auto p = regex::create_regex_parser(a);
+            p.parse(
+                parse_options{}.set_skip_whitespace(false).set_verbose(),
+                buffers::cstring_buffer(Pattern),
+                s
+            );
+        }
+
+        template<size_t N>
+        constexpr bool match(const char (&str)[N]) const
+        {
+            return match(buffers::cstring_buffer(str));
+        }
+
+        template<typename Buffer>
+        constexpr bool match(const Buffer& buf) const
+        {
+            detail::no_stream s;
+            return match(buf, s);
+        }
+
+        template<typename Buffer, typename Stream>
+        constexpr bool match(const Buffer& buf, Stream& s) const
+        {
+            return match(match_options{}, buf, s);
+        }
+
+        template<typename Buffer, typename Stream>
+        constexpr bool match(match_options opts, const Buffer& buf, Stream& s) const
+        {
+            auto res = dfa_match(sm, opts, buf.begin(), buf.end(), s);
+            if (res.term_idx == 0 && res.it == buf.end())
+                return true;
+            else
+            {
+                if (res.term_idx == 0)
+                    s << "Leftover text after recognition: " << buf.get_view(res.it, buf.end()) << "\n";
+                else
+                    s << "Unexpected char: " << utils::c_names.name(*res.it) << "\n";
+                return false;
+            }
+        }
+
+        template<typename Stream>
+        constexpr void write_diag_str(Stream& stream) const
+        {
+            regex::write_dfa_diag_str(sm, stream);
+        }
+
+    private:
+        dfa<dfa_size> sm;
+    };
 }
+
+template<auto& Pattern>
+class regex_term : public term
+{
+public:
+    using internal_value_type = std::string_view;
+
+    static const size_t dfa_size = regex::analyze_dfa_size(Pattern);
+    static const bool is_trivial = false;
+
+    static const size_t pattern_size = std::size(Pattern);
+
+    constexpr regex_term(associativity a = associativity::no_assoc) :
+        regex_term(nullptr, 0, a)
+    {}
+
+    constexpr regex_term(int precedence = 0, associativity a = associativity::no_assoc) :
+        regex_term(nullptr, precedence, a)
+    {}
+
+    constexpr regex_term(const char *custom_name, int precedence = 0, associativity a = associativity::no_assoc) :
+        term(precedence, a),
+        custom_name(custom_name)
+    {
+        id[0] = 'r';
+        id[1] = '_';
+        utils::copy_array(&id[2], Pattern, std::make_index_sequence<pattern_size>{});
+    }
+
+    constexpr const char* get_name() const { return custom_name ? custom_name : id; }
+    constexpr const char* get_id() const { return id; }
+    constexpr auto get_data() const { return regex::regex_pattern_data<pattern_size>{ Pattern }; }
+
+    constexpr const auto& get_ftor() const { return detail::pass_sv; }
+
+private:
+    char id[pattern_size + 2] = {};
+    const char* custom_name = nullptr;
+};
 
 } // namespace ctpg
 
