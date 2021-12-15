@@ -1007,7 +1007,7 @@ use the following supported features (in precedence descending order):
 | Feature                     | Example          | Meaning                                     |
 | --------------------------- | ---------------- | ------------------------------------------- |
 | Single char                 | ```a```          | character ```a```                           |
-| Escaped char                | ```\\|```        | character ```|```                           |
+| Escaped char                | ```\\|```        | character ```\|```                          |
 | Escaped char (hex)          | ```\\x20```      | space character                             |
 | Any char                    | ```.```          | any character                               |
 | Char range                  | ```[a-z]```      | lower case letter                           |
