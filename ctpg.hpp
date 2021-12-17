@@ -888,6 +888,30 @@ private:
     ftor_type ftor;
 };
 
+template<typename Ftor>
+class custom_term : public term
+{
+public:
+    using internal_value_type = std::invoke_result_t<Ftor, std::string_view>;
+    static const size_t dfa_size = 0;
+    static const bool is_trivial = false;
+
+    constexpr custom_term(const char* custom_name, Ftor ftor, int precedence = 0, associativity a = associativity::no_assoc):
+        term(precedence, a), custom_name(custom_name), ftor(ftor)
+    {}
+
+    constexpr const char* get_id() const { return get_name(); }
+    constexpr const char* get_name() const { return custom_name; }
+
+    using ftor_type = Ftor;
+
+    constexpr const ftor_type& get_ftor() const { return ftor; }
+
+private:
+    const char* custom_name;
+    Ftor ftor;
+};
+
 struct error_recovery_token
 {
     constexpr static const char* get_name() { return "<error_recovery_token>"; }
@@ -938,6 +962,12 @@ struct parse_options
     bool skip_whitespace = true;
 };
 
+struct match_options
+{
+    bool verbose = false;
+    constexpr match_options& set_verbose(bool val = true) { verbose = val; return *this; }
+};
+
 namespace detail
 {
     struct no_stream
@@ -946,6 +976,13 @@ namespace detail
         constexpr const no_stream& operator <<(T&&) const { return *this; }
     };
 }
+
+template<typename Iterator>
+struct recognized_term
+{
+    Iterator it;
+    size16_t term_idx;
+};
 
 namespace regex
 {
@@ -1037,13 +1074,6 @@ namespace regex
         stdex::cbitset<meta::distinct_values_count<char>> data = {};
     };
 
-    template<typename Iterator>
-    struct recognized_term
-    {
-        Iterator it;
-        size16_t term_idx;
-    };
-
     template<size_t N>
     using dfa = stdex::cvector<dfa_state, N>;
 
@@ -1054,8 +1084,6 @@ namespace regex
 
         constexpr slice primary_char(char) { return prim(); }
         constexpr slice primary_subset(char_subset&&) { return prim(); }
-
-        constexpr slice primary_regex_primary(const char_subset&) { return prim(); }
 
         constexpr slice star(slice s) { return s; }
         constexpr slice plus(slice s) { return s; }
@@ -1118,22 +1146,6 @@ namespace regex
             sm.back().start_state = 1;
             dfa_state& to = transition(sm.back(), s);
             to.end_state = 1;
-            return slice{ size32_t(old_size), 2 };
-        }
-
-        constexpr slice primary_regex_primary(const char_subset& cs)
-        {
-            size_t old_size = sm.size();
-            sm.push_back(dfa_state());
-            sm.back().start_state = 1;
-
-            for (size_t i = 0; i < cs.size(); ++i)
-                if (s.test(i))
-                {
-                    sm.back().transitions[i] = size16_t(sm.size());
-                }
-            sm.push_back(dfa_state());
-            sm.back().end_state = 1;
             return slice{ size32_t(old_size), 2 };
         }
 
@@ -1292,40 +1304,6 @@ namespace regex
         const char (&pattern)[N];
     };
 
-    struct regex_09_digit_data {};
-
-    class regex_digit_09 : public term
-    {
-    public:
-        using internal_value_type = char;
-        static const size_t dfa_size = 2;
-        static const bool is_trivial = true;
-
-        constexpr const char* get_id() const { return "$regex_digit_09$"; }
-        constexpr const char* get_name() const { return get_id(); }
-
-        constexpr auto get_data() const { return regex_09_digit_data{}; }
-
-        constexpr const auto& get_ftor() const { return detail::first_sv_char; }
-    };
-
-    struct regex_primary_data {};
-
-    class regex_primary : public term
-    {
-    public:
-        using internal_value_type = std:string_view;
-        static const size_t dfa_size = 2;
-        static const bool is_trivial = true;
-
-        constexpr const char* get_id() const { return "$regex_primary$"; }
-        constexpr const char* get_name() const { return get_id(); }
-
-        constexpr auto get_data() const { return regex_primary_data{}; }
-
-        constexpr const auto& get_ftor() const { return detail::pass_sv; }
-    };
-
     template<size_t N, typename Parser>
     constexpr void add_term_data_to_dfa(char c, dfa_builder<N>& b, const Parser&, size_t idx)
     {
@@ -1379,17 +1357,11 @@ namespace regex
             throw std::runtime_error("Regex parse error");
     }
 
-    struct match_options
-    {
-        bool verbose = false;
-        source_point sp;
-        constexpr match_options& set_verbose(bool val = true) { verbose = val; return *this; }
-    };
-
     template<size_t N, typename Iterator, typename ErrorStream>
     constexpr auto dfa_match(
         const dfa<N>& sm,
         match_options options,
+        source_point sp,
         Iterator start,
         Iterator end,
         ErrorStream& error_stream)
@@ -1408,10 +1380,10 @@ namespace regex
 
                 if (options.verbose)
                 {
-                    error_stream << options.sp << " REGEX MATCH: Recognized " << rec_idx << "\n";
+                    error_stream << sp << " REGEX MATCH: Recognized " << rec_idx << "\n";
                 }
             }
-            options.sp.update(it_prev, start);
+            sp.update(it_prev, start);
 
             if (start == end)
                 break;
@@ -1428,8 +1400,8 @@ namespace regex
 
             if (options.verbose)
             {
-                error_stream << options.sp << " REGEX MATCH: Current char " << utils::c_names.name(*start) << "\n";
-                error_stream << options.sp << " REGEX MATCH: New state " << state_idx << "\n";
+                error_stream << sp << " REGEX MATCH: Current char " << utils::c_names.name(*start) << "\n";
+                error_stream << sp << " REGEX MATCH: New state " << state_idx << "\n";
             }
             it_prev = start;
             ++start;
@@ -1723,9 +1695,6 @@ namespace detail
     using parser_value_stack_type_t = typename parser_value_stack_type<Buffer, EmptyRulesCount, ValueVariantType>::type;
 }
 
-template<typename Root, typename Terms, typename NTerms, typename Rules, typename LexerUsage>
-class parser
-{};
 
 namespace detail
 {
@@ -1735,6 +1704,21 @@ namespace detail
         static const size_t value = (0 + ... + (RuleSizes + 1)) * TermCount;
     };
 }
+
+template<typename Lexer>
+struct use_lexer
+{
+    using type = Lexer;
+};
+
+struct use_generated_lexer
+{
+    using type = no_type;
+};
+
+template<typename Root, typename Terms, typename NTerms, typename Rules, typename LexerUsage>
+class parser
+{};
 
 template<typename RootValueType, typename... Terms, typename... NTerms, typename... Rules, typename LexerUsage>
 class parser<
@@ -1759,11 +1743,19 @@ public:
         root_nterm_type root,
         term_tuple_type terms,
         nterm_tuple_type nterms,
+        rule_tuple_type&& rules,
+        LexerUsage):
+        parser(root, terms, nterms, std::move(rules))
+    {}
+
+    constexpr parser(
+        root_nterm_type root,
+        term_tuple_type terms,
+        nterm_tuple_type nterms,
         rule_tuple_type&& rules):
         term_tuple(terms),
         nterm_tuple(nterms),
-        rule_tuple(std::move(rules)),
-        lexer(term_tuple)
+        rule_tuple(std::move(rules))
     {
         auto seq_for_terms = std::make_index_sequence<std::tuple_size_v<term_tuple_type>>{};
         analyze_nterms(std::make_index_sequence<std::tuple_size_v<nterm_tuple_type>>{});
@@ -2675,7 +2667,7 @@ private:
             ps.current_it = after_ws;
         }
 
-        using res_type = regex::recognized_term<typename ParseState::iterator>;
+        using res_type = recognized_term<typename ParseState::iterator>;
 
         if (ps.current_it == ps.buffer_end)
         {
@@ -2684,18 +2676,18 @@ private:
             return eof_idx;
         }
 
-        recognized_term<typename ParseState::iterator> res;
+        res_type res{};
+        match_options opts;
+        opts.set_verbose(ps.options.verbose);
+
         if constexpr (generate_lexer)
         {
-            regex::match_options opts;
-            opts.set_verbose(ps.options.verbose);
-            opts.sp = ps.current_sp;
-
-            res = regex::dfa_match(lexer_sm, opts, ps.current_it, ps.buffer_end, ps.error_stream);
+            res = regex::dfa_match(lexer_sm, opts, ps.current_sp, ps.current_it, ps.buffer_end, ps.error_stream);
         }
         else
         {
-            res = custom_lexer.match(ps)
+            lexer_type custom_lexer;
+            res = custom_lexer.match(opts, ps.current_sp, ps.current_it, ps.buffer_end, ps.error_stream);
         }
 
         ps.current_term_end_it = res.it;
@@ -2789,26 +2781,13 @@ private:
 
     using dfa_type = regex::dfa<lexer_dfa_size>;
     dfa_type lexer_sm = {};
-
-    lexer_type custom_lexer;
-};
-
-template<typename Lexer>
-struct use_lexer
-{
-    using type = Lexer;
-};
-
-struct use_generated_lexer
-{
-    using type = no_type;
 };
 
 template<typename Root, typename Terms, typename NTerms, typename Rules>
 parser(Root, Terms, NTerms, Rules&&) -> parser<Root, Terms, NTerms, Rules, use_generated_lexer>;
 
-template<typename Root, typename Terms, typename NTerms, typename Rules, typename Lexer>
-parser(Root, Terms, NTerms, Rules&&, use_lexer<Lexer>) -> parser<Root, Terms, NTerms, Rules, Lexer>;
+template<typename Root, typename Terms, typename NTerms, typename Rules, typename LexerUsage>
+parser(Root, Terms, NTerms, Rules&&, LexerUsage) -> parser<Root, Terms, NTerms, Rules, LexerUsage>;
 
 template<typename... Terms>
 constexpr auto terms(const Terms&... terms)
@@ -2839,18 +2818,51 @@ namespace regex
     class regex_lexer
     {
     public:
-        template<typename... Terms>
-        constexpr regex_lexer(const std::tuple<Terms...>& terms)
+        constexpr regex_lexer()
         {
-
         }
 
-        template<typename ParseState>
-        constexpr size16_t match(ParseState& ps)
+        template<typename Iterator, typename ErrorStream>
+        constexpr auto match(
+            match_options options,
+            source_point sp,
+            Iterator start,
+            Iterator end,
+            ErrorStream& error_stream)
         {
-            return uninitialized16;
+            if (start == end)
+                return not_recognized(start);
+
+            return not_recognized(start);
+        }
+
+    private:
+        template<typename Iterator, typename ErrorStream>
+        constexpr auto recognized(
+            size16_t idx,
+            match_options options,
+            source_point sp,
+            Iterator start,
+            ErrorStream& error_stream)
+        {
+            Iterator term_end = start;
+            if (options.verbose)
+                error_stream << sp << " LEXER MATCH: Recognized " << idx << " \n";
+            sp.update(start, ++term_end);
+            return recognized_term<Iterator>{term_end, idx};
+        }
+
+        template<typename Iterator>
+        constexpr auto not_recognized(Iterator start) const
+        {
+            return recognized_term<Iterator>{start, uninitialized16};
         }
     };
+
+    constexpr char_subset string_view_to_subset(std::string_view sv)
+    {
+        return char_subset{};
+    }
 
     template<typename Builder>
     constexpr auto create_regex_parser(Builder& b)
@@ -2865,18 +2877,18 @@ namespace regex
         constexpr nterm<slice> primary("primary");
         constexpr nterm<size32_t> number("number");
 
-        constexpr custom_term<char> regex_digit_09;
-        constexpr custom_term<char_subset> regex_primary;
+        constexpr custom_term regex_digit_09("regex_digit_09", [](auto sv) { return size32_t(sv[0]) - '0'; });
+        constexpr custom_term regex_primary("regex_primary", string_view_to_subset);
 
         return parser(
             expr,
             terms(regex_digit_09, regex_primary, '*', '+', '?', '|', '(', ')', '{', '}'),
             nterms(expr, alt, concat, q_expr, primary, number),
             rules(
-                number(regex_digit_09) >= [](char d){ return d - '0'; },
-                number(number, regex_digit_09) >= [](size32_t n, char d){ return n * 10 + (d - '0'); },
-                primary(regex_digit_09) >= [&b](char c)( return b.primary_char(c); ),
-                primary(regex_primary) >= [&b](const auto& s)( return b.primary_regex_primary(s); ),
+                number(regex_digit_09),
+                number(number, regex_digit_09) >= [](size32_t n, size32_t x){ return n * 10 + x; },
+                primary(regex_digit_09) >= [&b](char c){ return b.primary_char(c); },
+                primary(regex_primary) >= [&b](const auto& s){ return b.primary_subset(s); },
                 primary('(', expr, ')') >= _e2,
                 q_expr(primary),
                 q_expr(primary, '*') >= [&b](slice p, skip) { return b.star(p); },
@@ -2972,7 +2984,7 @@ namespace regex
         template<typename Buffer, typename Stream>
         constexpr bool match(match_options opts, const Buffer& buf, Stream& s) const
         {
-            auto res = dfa_match(sm, opts, buf.begin(), buf.end(), s);
+            auto res = dfa_match(sm, opts, source_point{}, buf.begin(), buf.end(), s);
             if (res.term_idx == 0 && res.it == buf.end())
                 return true;
             else
