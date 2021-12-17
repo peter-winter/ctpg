@@ -1030,8 +1030,8 @@ namespace regex
 
         constexpr bool test(size_t idx) const { return data.test(idx); }
         constexpr size_t size() const { return data.size(); }
-        constexpr char_subset&& set() && { data.set(); return std::move(*this); }
-        constexpr char_subset&& flip() && { data.flip(); return std::move(*this); }
+        constexpr char_subset& set() { data.set(); return *this; }
+        constexpr char_subset& flip() { data.flip(); return *this; }
 
     private:
         stdex::cbitset<meta::distinct_values_count<char>> data = {};
@@ -1052,10 +1052,11 @@ namespace regex
     public:
         using slice = utils::slice;
 
-        constexpr slice prim_char(char) { return prim(); }
-        constexpr slice prim_subset(char_subset&&) { return prim(); }
-        constexpr slice prim_subset_flip(char_subset&&) { return prim(); }
-        constexpr slice prim_any() { return prim(); }
+        constexpr slice primary_char(char) { return prim(); }
+        constexpr slice primary_subset(char_subset&&) { return prim(); }
+
+        constexpr slice primary_regex_primary(const char_subset&) { return prim(); }
+
         constexpr slice star(slice s) { return s; }
         constexpr slice plus(slice s) { return s; }
         constexpr slice opt(slice s) { return s; }
@@ -1087,17 +1088,46 @@ namespace regex
 
         using slice = utils::slice;
 
-        constexpr slice prim_char(char c)
+        constexpr dfa_state& transition(dfa_state& from, const char_subset& s)
         {
-            return prim_subset(char_subset(char_range(c)));
+            for (size_t i = 0; i < s.size(); ++i)
+                if (s.test(i))
+                {
+                    from.transitions[i] = size16_t(sm.size());
+                }
+            sm.push_back(dfa_state());
+            return sm.back();
         }
 
-        constexpr slice prim_subset(char_subset&& s)
+        constexpr dfa_state& transition(dfa_state& from, char c)
+        {
+            from.transitions[utils::char_to_idx(c)] = size16_t(sm.size());
+            sm.push_back(dfa_state());
+            return sm.back();
+        }
+
+        constexpr slice primary_char(char c)
+        {
+            return primary_subset(char_subset(char_range(c)));
+        }
+
+        constexpr slice primary_subset(const char_subset& s)
         {
             size_t old_size = sm.size();
             sm.push_back(dfa_state());
             sm.back().start_state = 1;
-            for (size_t i = 0; i < s.size(); ++i)
+            dfa_state& to = transition(sm.back(), s);
+            to.end_state = 1;
+            return slice{ size32_t(old_size), 2 };
+        }
+
+        constexpr slice primary_regex_primary(const char_subset& cs)
+        {
+            size_t old_size = sm.size();
+            sm.push_back(dfa_state());
+            sm.back().start_state = 1;
+
+            for (size_t i = 0; i < cs.size(); ++i)
                 if (s.test(i))
                 {
                     sm.back().transitions[i] = size16_t(sm.size());
@@ -1105,16 +1135,6 @@ namespace regex
             sm.push_back(dfa_state());
             sm.back().end_state = 1;
             return slice{ size32_t(old_size), 2 };
-        }
-
-        constexpr slice prim_subset_flip(char_subset&& s)
-        {
-            return prim_subset(std::move(s).flip());
-        }
-
-        constexpr slice prim_any()
-        {
-            return prim_subset(char_subset().set());
         }
 
         constexpr slice star(slice s)
@@ -1272,35 +1292,7 @@ namespace regex
         const char (&pattern)[N];
     };
 
-    struct regex_regular_chars_data
-    {
-        constexpr static char special_chars[] = "\\[]^-.*+?|(){}abcdefABCDEF0123456789x";
-    };
-
-    struct regex_af_digit_chars
-    {
-        constexpr static char chars[] = "abcdefABCDEF";
-    };
-
-    struct regex_09_digit_chars
-    {
-        constexpr static char chars[] = "0123456789";
-    };
-
-    class regex_digit_af : public term
-    {
-    public:
-        using internal_value_type = char;
-        static const size_t dfa_size = 2;
-        static const bool is_trivial = true;
-
-        constexpr const char* get_id() const { return "$regex_digit_af$"; }
-        constexpr const char* get_name() const { return get_id(); }
-
-        constexpr auto get_data() const { return regex_af_digit_chars{}; }
-
-        constexpr const auto& get_ftor() const { return detail::first_sv_char; }
-    };
+    struct regex_09_digit_data {};
 
     class regex_digit_09 : public term
     {
@@ -1312,51 +1304,27 @@ namespace regex
         constexpr const char* get_id() const { return "$regex_digit_09$"; }
         constexpr const char* get_name() const { return get_id(); }
 
-        constexpr auto get_data() const { return regex_09_digit_chars{}; }
+        constexpr auto get_data() const { return regex_09_digit_data{}; }
 
         constexpr const auto& get_ftor() const { return detail::first_sv_char; }
     };
 
-    class regex_regular_char : public term
+    struct regex_primary_data {};
+
+    class regex_primary : public term
     {
     public:
-        using internal_value_type = char;
+        using internal_value_type = std:string_view;
         static const size_t dfa_size = 2;
         static const bool is_trivial = true;
 
-        constexpr const char* get_id() const { return "$regex_regular$"; }
+        constexpr const char* get_id() const { return "$regex_primary$"; }
         constexpr const char* get_name() const { return get_id(); }
 
-        constexpr auto get_data() const { return regex_regular_chars_data{}; }
+        constexpr auto get_data() const { return regex_primary_data{}; }
 
-        constexpr const auto& get_ftor() const { return detail::first_sv_char; }
+        constexpr const auto& get_ftor() const { return detail::pass_sv; }
     };
-
-    template<size_t N, typename Parser>
-    constexpr bool add_term_data_to_dfa(regex_regular_chars_data, dfa_builder<N>& b, const Parser&, size_t idx)
-    {
-        char_subset cs(regex_regular_chars_data::special_chars);
-        cs.add_range(char_range('\0', '\x1f'));
-        cs.add_range(char_range('\x7f', '\xff'));
-
-        utils::slice prev{0, size32_t(b.size())};
-        utils::slice new_sl = b.prim_subset_flip(std::move(cs));
-        b.mark_end_states(new_sl, idx);
-        b.alt(prev, new_sl);
-        return true;
-    }
-
-    template<typename Data, size_t N, typename Parser, typename = std::void_t<decltype(Data::chars)>>
-    constexpr bool add_term_data_to_dfa(Data, dfa_builder<N>& b, const Parser&, size_t idx)
-    {
-        utils::slice prev{0, size32_t(b.size())};
-        utils::slice new_sl = b.prim_subset(
-            char_subset(Data::chars)
-        );
-        b.mark_end_states(new_sl, idx);
-        b.alt(prev, new_sl);
-        return true;
-    }
 
     template<size_t N, typename Parser>
     constexpr void add_term_data_to_dfa(char c, dfa_builder<N>& b, const Parser&, size_t idx)
@@ -1755,7 +1723,7 @@ namespace detail
     using parser_value_stack_type_t = typename parser_value_stack_type<Buffer, EmptyRulesCount, ValueVariantType>::type;
 }
 
-template<typename Root, typename Terms, typename NTerms, typename Rules>
+template<typename Root, typename Terms, typename NTerms, typename Rules, typename LexerUsage>
 class parser
 {};
 
@@ -1768,12 +1736,13 @@ namespace detail
     };
 }
 
-template<typename RootValueType, typename... Terms, typename... NTerms, typename... Rules>
+template<typename RootValueType, typename... Terms, typename... NTerms, typename... Rules, typename LexerUsage>
 class parser<
     nterm<RootValueType>,
     std::tuple<Terms...>,
     std::tuple<NTerms...>,
-    std::tuple<Rules...>
+    std::tuple<Rules...>,
+    LexerUsage
 >
 {
     using term_tuple_type = std::tuple<Terms...>;
@@ -1781,6 +1750,9 @@ class parser<
     using rule_tuple_type = std::tuple<Rules...>;
     using root_nterm_type = nterm<RootValueType>;
     using root_value_type = RootValueType;
+
+    static const bool generate_lexer = std::is_same_v<LexerUsage, use_generated_lexer>;
+    using lexer_type = typename LexerUsage::type;
 
 public:
     constexpr parser(
@@ -1790,7 +1762,8 @@ public:
         rule_tuple_type&& rules):
         term_tuple(terms),
         nterm_tuple(nterms),
-        rule_tuple(std::move(rules))
+        rule_tuple(std::move(rules)),
+        lexer(term_tuple)
     {
         auto seq_for_terms = std::make_index_sequence<std::tuple_size_v<term_tuple_type>>{};
         analyze_nterms(std::make_index_sequence<std::tuple_size_v<nterm_tuple_type>>{});
@@ -1927,7 +1900,7 @@ private:
     static const size_t situation_size = max_rule_element_count + 1;
     static const size_t situation_address_space_size = rule_count * situation_size * term_count;
     static const size_t max_states = detail::deduce_max_states::template value<term_count, Rules::n..., 1>;
-    static const size_t lexer_dfa_size = (0 + ... + Terms::dfa_size);
+    static const size_t lexer_dfa_size = generate_lexer ? (0 + ... + Terms::dfa_size) : 1;
 
     using value_variant_type = meta::unique_types_variant_t<
         std::nullptr_t,
@@ -2711,10 +2684,20 @@ private:
             return eof_idx;
         }
 
-        regex::match_options opts;
-        opts.set_verbose(ps.options.verbose);
-        opts.sp = ps.current_sp;
-        auto res = regex::dfa_match(lexer_sm, opts, ps.current_it, ps.buffer_end, ps.error_stream);
+        recognized_term<typename ParseState::iterator> res;
+        if constexpr (generate_lexer)
+        {
+            regex::match_options opts;
+            opts.set_verbose(ps.options.verbose);
+            opts.sp = ps.current_sp;
+
+            res = regex::dfa_match(lexer_sm, opts, ps.current_it, ps.buffer_end, ps.error_stream);
+        }
+        else
+        {
+            res = custom_lexer.match(ps)
+        }
+
         ps.current_term_end_it = res.it;
         ps.current_term_idx = res.term_idx;
 
@@ -2766,14 +2749,17 @@ private:
     template<size_t... I>
     constexpr void create_lexer(std::index_sequence<I...>)
     {
-        regex::dfa_builder<lexer_dfa_size> b(lexer_sm);
-        constexpr bool trivial_lexer = (true && ... && std::tuple_element_t<I, term_tuple_type>::is_trivial);
-        if constexpr (trivial_lexer)
-            (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, no_parser{}, I)), ...);
-        else
+        if constexpr (generate_lexer)
         {
-            auto p = regex::create_regex_parser(b);
-            (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, p, I)), ...);
+            regex::dfa_builder<lexer_dfa_size> b(lexer_sm);
+            constexpr bool trivial_lexer = (true && ... && std::tuple_element_t<I, term_tuple_type>::is_trivial);
+            if constexpr (trivial_lexer)
+                (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, no_parser{}, I)), ...);
+            else
+            {
+                auto p = regex::create_regex_parser(b);
+                (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, p, I)), ...);
+            }
         }
     }
 
@@ -2803,10 +2789,26 @@ private:
 
     using dfa_type = regex::dfa<lexer_dfa_size>;
     dfa_type lexer_sm = {};
+
+    lexer_type custom_lexer;
+};
+
+template<typename Lexer>
+struct use_lexer
+{
+    using type = Lexer;
+};
+
+struct use_generated_lexer
+{
+    using type = no_type;
 };
 
 template<typename Root, typename Terms, typename NTerms, typename Rules>
-parser(Root, Terms, NTerms, Rules&&) -> parser<Root, Terms, NTerms, Rules>;
+parser(Root, Terms, NTerms, Rules&&) -> parser<Root, Terms, NTerms, Rules, use_generated_lexer>;
+
+template<typename Root, typename Terms, typename NTerms, typename Rules, typename Lexer>
+parser(Root, Terms, NTerms, Rules&&, use_lexer<Lexer>) -> parser<Root, Terms, NTerms, Rules, Lexer>;
 
 template<typename... Terms>
 constexpr auto terms(const Terms&... terms)
@@ -2834,6 +2836,22 @@ struct skip
 
 namespace regex
 {
+    class regex_lexer
+    {
+    public:
+        template<typename... Terms>
+        constexpr regex_lexer(const std::tuple<Terms...>& terms)
+        {
+
+        }
+
+        template<typename ParseState>
+        constexpr size16_t match(ParseState& ps)
+        {
+            return uninitialized16;
+        }
+    };
+
     template<typename Builder>
     constexpr auto create_regex_parser(Builder& b)
     {
@@ -2845,68 +2863,20 @@ namespace regex
         constexpr nterm<slice> concat("concat");
         constexpr nterm<slice> q_expr("q_expr");
         constexpr nterm<slice> primary("primary");
-        constexpr nterm<char_subset> c_subset("c_subset");
-        constexpr nterm<char_range> c_subset_item("c_subset_item");
-        constexpr nterm<char_range> c_range("c_range");
-        constexpr nterm<char> c_subset_char("c_subset_char");
-        constexpr nterm<char> single_char("single_char");
-        constexpr nterm<char> regex_hex_digit("regex_hex_digit");
         constexpr nterm<size32_t> number("number");
+
+        constexpr custom_term<char> regex_digit_09;
+        constexpr custom_term<char_subset> regex_primary;
 
         return parser(
             expr,
-            terms(regex_regular_char{}, regex_digit_af{}, regex_digit_09{},
-                'x', '\\', '[', ']', '^', '-', '.', '*', '+', '?', '|', '(', ')', '{', '}'
-            ),
-            nterms(expr, alt, concat, q_expr, primary, c_range, c_subset, c_subset_item, c_subset_char, single_char, regex_hex_digit, number),
+            terms(regex_digit_09, regex_primary, '*', '+', '?', '|', '(', ')', '{', '}'),
+            nterms(expr, alt, concat, q_expr, primary, number),
             rules(
-                number(regex_digit_09{}) >= [](char d){ return d - '0'; },
-                number(number, regex_digit_09{}) >= [](size32_t n, char d){ return n * 10 + (d - '0'); },
-                regex_hex_digit(regex_digit_af{}),
-                regex_hex_digit(regex_digit_09{}),
-                single_char(regex_regular_char{}),
-                single_char(regex_hex_digit),
-                single_char('x'),
-                single_char('-'),
-                single_char('\\', regex_regular_char{}) >= _e2,
-                single_char('\\', regex_hex_digit) >= _e2,
-                single_char('\\', '\\') >= _e2,
-                single_char('\\', '[') >= _e2,
-                single_char('\\', ']') >= _e2,
-                single_char('\\', '-') >= _e2,
-                single_char('\\', '.') >= _e2,
-                single_char('\\', '*') >= _e2,
-                single_char('\\', '+') >= _e2,
-                single_char('\\', '?') >= _e2,
-                single_char('\\', '|') >= _e2,
-                single_char('\\', '(') >= _e2,
-                single_char('\\', ')') >= _e2,
-                single_char('\\', '{') >= _e2,
-                single_char('\\', '}') >= _e2,
-                single_char('\\', 'x') >= val('\0'),
-                single_char('\\', 'x', regex_hex_digit) >= [](skip, skip, char d2){ return hex_digits_to_char(0, d2); },
-                single_char('\\', 'x', regex_hex_digit, regex_hex_digit) >= [](skip, skip, char d1, char d2){ return hex_digits_to_char(d1, d2); },
-                c_subset_char(single_char),
-                c_subset_char('+'),
-                c_subset_char('*'),
-                c_subset_char('?'),
-                c_subset_char('{'),
-                c_subset_char('}'),
-                c_subset_char('('),
-                c_subset_char(')'),
-                c_subset_char('.'),
-                c_subset_char('|'),
-                c_subset_char('['),
-                c_subset_char('^'),
-                c_range(c_subset_char, '-', c_subset_char) >= [](char c1, skip, char c2){ return char_range(c1, c2); },
-                c_subset_item(c_subset_char) >= [](char c) { return char_range(c); },
-                c_subset_item(c_range),
-                c_subset(c_subset_item) >= [](char_range r){ return char_subset(r); },
-                c_subset(c_subset_item, c_subset) >= [](char_range r, char_subset&& s){ return s.add_range(r); },
-                primary(single_char) >= [&b](char c) { return b.prim_char(c); },
-                primary('.') >= [&b](skip) { return b.prim_any(); },
-                primary('[', c_subset, ']') >= [&b](skip, char_subset&& s, skip) { return b.prim_subset(std::move(s)); },
-                primary('[', '^', c_subset, ']') >= [&b](skip, skip, char_subset&& s, skip) { return b.prim_subset_flip(std::move(s)); },
+                number(regex_digit_09) >= [](char d){ return d - '0'; },
+                number(number, regex_digit_09) >= [](size32_t n, char d){ return n * 10 + (d - '0'); },
+                primary(regex_digit_09) >= [&b](char c)( return b.primary_char(c); ),
+                primary(regex_primary) >= [&b](const auto& s)( return b.primary_regex_primary(s); ),
                 primary('(', expr, ')') >= _e2,
                 q_expr(primary),
                 q_expr(primary, '*') >= [&b](slice p, skip) { return b.star(p); },
@@ -2914,11 +2884,12 @@ namespace regex
                 q_expr(primary, '?') >= [&b](slice p, skip) { return b.opt(p); },
                 q_expr(primary, '{', number, '}') >= [&b](slice p, skip, size32_t n, skip) { return b.rep(p, n); },
                 concat(q_expr),
-                concat(q_expr, concat) >= [&b](slice p1, slice p2) { return b.cat(p1, p2); },
+                concat(concat, q_expr) >= [&b](slice p1, slice p2) { return b.cat(p1, p2); },
                 alt(concat),
                 alt(alt, '|', alt) >= [&b](slice p1, skip, slice p2) { return b.alt(p1, p2); },
                 expr(alt)
-            )
+            ),
+            use_lexer<regex_lexer>{}
         );
     }
 
