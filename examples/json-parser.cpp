@@ -277,10 +277,11 @@ constexpr parser js_parser(
 
 int main(int argc, char* argv[])
 {
-    js_parser.write_diag_str(std::cout);
-
-    if (argc < 2)
-        return -1;
+    if (argc != 2)
+    {
+        js_parser.write_diag_str(std::cout);
+        return 0;
+    }
 
     auto res = js_parser.parse(
         parse_options{}.set_verbose(),
