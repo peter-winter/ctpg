@@ -386,6 +386,21 @@ namespace utils
         return static_cast<char>(static_cast<unsigned char>(idx & 0xff));
     }
 
+    constexpr bool is_printable(char c)
+    {
+        return c >= 0x20 && c <= 0x7e;
+    }
+
+    constexpr bool is_hex_digit(char c)
+    {
+        return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F';
+    }
+
+    constexpr bool is_dec_digit(char c)
+    {
+        return c >= '0' && c <= '9';
+    }
+
     class char_names
     {
     public:
@@ -674,6 +689,7 @@ namespace buffers
             constexpr iterator operator ++(int) { iterator i(*this); ++ptr; return i; }
             constexpr bool operator == (const iterator& other) const { return ptr == other.ptr; }
             constexpr bool operator != (const iterator& other) const { return ptr != other.ptr; }
+            constexpr iterator& operator += (size_t len) { ptr += len; return *this; }
         };
 
         constexpr iterator begin() const { return iterator{ data }; }
@@ -1069,6 +1085,7 @@ namespace regex
         constexpr size_t size() const { return data.size(); }
         constexpr char_subset& set() { data.set(); return *this; }
         constexpr char_subset& flip() { data.flip(); return *this; }
+        constexpr char_subset& set(size_t idx) { data.set(idx); return *this; }
 
     private:
         stdex::cbitset<meta::distinct_values_count<char>> data = {};
@@ -1310,7 +1327,7 @@ namespace regex
         using slice = utils::slice;
 
         slice prev{0, size32_t(b.size())};
-        slice new_sl = b.prim_char(c);
+        slice new_sl = b.primary_char(c);
         b.mark_end_states(new_sl, idx);
         b.alt(prev, new_sl);
     }
@@ -1321,10 +1338,10 @@ namespace regex
         using slice = utils::slice;
         slice prev{0, size32_t(b.size())};
 
-        slice whole = b.prim_char(str[0]);
+        slice whole = b.primary_char(str[0]);
         for (size_t i = 1; i < DataSize - 1; ++i)
         {
-            slice char_sl = b.prim_char(str[i]);
+            slice char_sl = b.primary_char(str[i]);
             whole = b.cat(whole, char_sl);
         }
 
@@ -1875,8 +1892,11 @@ public:
             s << "\n";
         }
 
-        s << "\n" << "LEXICAL ANALYZER" << "\n" << "\n";
-        regex::write_dfa_diag_str(lexer_sm, s, term_names);
+        if constexpr (generate_lexer)
+        {
+            s << "\n" << "LEXICAL ANALYZER" << "\n" << "\n";
+            regex::write_dfa_diag_str(lexer_sm, s, term_names);
+        }
     }
 
 private:
@@ -2820,6 +2840,17 @@ namespace regex
     public:
         constexpr regex_lexer()
         {
+            //0              1             2 3 4 5 6 7 8 9
+            //regex_digit_09 regex_primary * + ? | ( ) { }
+
+            specials['*'] = 2;
+            specials['+'] = 3;
+            specials['?'] = 4;
+            specials['|'] = 5;
+            specials['('] = 6;
+            specials[')'] = 7;
+            specials['{'] = 8;
+            specials['}'] = 9;
         }
 
         template<typename Iterator, typename ErrorStream>
@@ -2833,13 +2864,180 @@ namespace regex
             if (start == end)
                 return not_recognized(start);
 
+            char c = *start;
+
+            auto res = [&](size16_t idx, size_t len)
+            { return recognized(idx, len, options, sp, start, error_stream); };
+
+            if (specials[c] != 0)
+                return res(specials[c], 1);
+
+            if (utils::is_dec_digit(c))
+                return res(0, 1);
+
+            size_t len = 0;
+            bool ok = match_primary(start, end, len);
+            if (ok)
+                return res(1, len);
+
             return not_recognized(start);
         }
 
     private:
+        size16_t specials[meta::distinct_chars_count] = {};
+
+        template<typename Iterator>
+        constexpr bool match_primary(Iterator start, Iterator end, size_t& len)
+        {
+            len = 0;
+            bool ok = match_escaped(start, end, len);
+            if (!ok)
+                return false;
+            if (len != 0)
+                return true;
+
+            ok = match_range(start, end, len);
+            if (!ok)
+                return false;
+            if (len != 0)
+                return true;
+
+            ok = utils::is_printable(*start);
+            if (ok)
+                len = 1;
+            return ok;
+        }
+
+        template<typename Iterator>
+        constexpr bool match_range(Iterator start, Iterator end, size_t& len)
+        {
+            char c = *start;
+            if (c == '[')
+            {
+                len = 1;
+                ++start;
+                if (start == end)
+                {
+                    len = 0;
+                    return false;
+                }
+                c = *start;
+                if (c == '^')
+                {
+                    len = 2;
+                    ++start;
+                }
+                if (start == end)
+                {
+                    len = 0;
+                    return false;
+                }
+                while (start != end && *start != ']')
+                {
+                    size_t item_len = 0;
+                    bool ok = match_range_item(start, end, item_len);
+                    if (!ok)
+                    {
+                        len = 0;
+                        return false;
+                    }
+                    len += item_len;
+                    start += item_len;
+                }
+                if (start == end)
+                {
+                    len = 0;
+                    return false;
+                }
+                len++;
+            }
+            return true;
+        }
+
+        template<typename Iterator>
+        constexpr bool match_range_item(Iterator start, Iterator end, size_t& len)
+        {
+            len = 0;
+            bool ok = match_escaped(start, end, len);
+            if (!ok)
+                return false;
+
+            if (len == 0)
+            {
+                ok = utils::is_printable(*start);
+                if (!ok)
+                    return false;
+                len = 1;
+            }
+
+            start += len;
+
+            if (*start == '-')
+            {
+                len++;
+
+                ++start;
+                if (start == end || *start == ']')
+                    return false;
+
+                size_t range_end_len = 0;
+                bool ok = match_escaped(start, end, range_end_len);
+                if (!ok)
+                    return false;
+
+                if (range_end_len == 0)
+                {
+                    ok = utils::is_printable(*start);
+                    if (!ok)
+                        return false;
+                    len += 1;
+                }
+                else
+                    len += range_end_len;
+            }
+
+            return ok;
+        }
+
+        template<typename Iterator>
+        constexpr bool match_escaped(Iterator start, Iterator end, size_t& len)
+        {
+            char c = *start;
+
+            if (c == '\\')
+            {
+                ++start;
+                if (start == end)
+                    return false;
+                c = *start;
+                len = 2;
+                if (c == 'x')
+                {
+                    ++start;
+                    if (start == end)
+                        return true;
+                    c = *start;
+                    if (!utils::is_hex_digit(c))
+                        return true;
+                    ++start;
+                    len = 3;
+                    if (start == end)
+                        return true;
+                    c = *start;
+                    if (!utils::is_hex_digit(c))
+                        return true;
+                    len = 4;
+                    return true;
+                }
+                return utils::is_printable(c);
+            }
+            return true;
+        }
+
         template<typename Iterator, typename ErrorStream>
         constexpr auto recognized(
             size16_t idx,
+            size_t len,
             match_options options,
             source_point sp,
             Iterator start,
@@ -2848,7 +3046,8 @@ namespace regex
             Iterator term_end = start;
             if (options.verbose)
                 error_stream << sp << " LEXER MATCH: Recognized " << idx << " \n";
-            sp.update(start, ++term_end);
+            term_end += len;
+            sp.update(start, term_end);
             return recognized_term<Iterator>{term_end, idx};
         }
 
@@ -2859,9 +3058,80 @@ namespace regex
         }
     };
 
+    constexpr char regex_char(std::string_view sv, size_t& len)
+    {
+        if (sv[0] == '\\')
+        {
+            if (sv[1] == 'x')
+            {
+                if (sv.size() == 2 || !utils::is_hex_digit(sv[2]))
+                {
+                    len = 2;
+                    return 0;
+                }
+                else if (sv.size() == 3 || !utils::is_hex_digit(sv[3]))
+                {
+                    len = 3;
+                    return hex_digits_to_char('0', sv[2]);
+                }
+                else
+                {
+                    len = 4;
+                    return hex_digits_to_char(sv[2], sv[3]);
+                }
+            }
+            else
+            {
+                len = 2;
+                return sv[1];
+            }
+        }
+        else
+        {
+            len = 1;
+            return sv[0];
+        }
+    }
+
     constexpr char_subset string_view_to_subset(std::string_view sv)
     {
-        return char_subset{};
+        char_subset cs;
+
+        if (sv[0] == '.')
+            cs.flip();
+        else if (sv[0] == '[')
+        {
+            bool flip = false;
+            size_t i = 1;
+            if (sv[1] == '^')
+            {
+                i++;
+                flip = true;
+            }
+            while (sv[i] != ']')
+            {
+                size_t len = 0;
+                char c1 = regex_char(sv.substr(i), len);
+                i += len;
+                if (sv[i] == '-')
+                {
+                    ++i;
+                    char c2 = regex_char(sv.substr(i), len);
+                    cs.add_range(char_range{c1, c2});
+                }
+                else
+                    cs.set(utils::char_to_idx(c1));
+            }
+            if (flip)
+                cs.flip();
+        }
+        else
+        {
+            size_t len = 0;
+            cs.set(utils::char_to_idx(regex_char(sv, len)));
+        }
+
+        return cs;
     }
 
     template<typename Builder>
