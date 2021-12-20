@@ -1,6 +1,5 @@
 #include "../ctpg.hpp"
 #include <iostream>
-#include <charconv>
 
 using namespace ctpg;
 using namespace ctpg::buffers;
@@ -22,9 +21,9 @@ constexpr parser p(
     terms(',', number),
     nterms(list),
     rules(
-        list(number) 
+        list(number)
             >= to_int,
-        list(list, ',', number) 
+        list(list, ',', number)
             >= [](int sum, char, const auto& n){ return sum + to_int(n); }
     )
 );
@@ -38,7 +37,7 @@ int main(int argc, char* argv[])
         std::cout << cres.value() << std::endl;
         return 0;
     }
-        
+
     auto res = p.parse(string_buffer(argv[1]), std::cerr);
     bool success = res.has_value();
     if (success)
