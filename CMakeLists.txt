@@ -19,7 +19,21 @@ target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_17)
 
 # Test
 find_package(Catch2 3 REQUIRED)
-add_executable(testbin tests/regex_tests.cpp)
+add_executable(testbin
+    tests/regex_tests.cpp
+    tests/simple_cases.cpp
+    tests/simple_grammar.cpp
+    tests/empty_symbols.cpp
+    tests/recurrence.cpp
+    tests/precedence.cpp
+    tests/compile_time.cpp
+    tests/list_helpers.cpp
+    tests/skip_whitespace.cpp
+    tests/typed_terms.cpp
+    tests/source_tracking.cpp
+    tests/error_recovery.cpp
+    tests/buffers.cpp
+)
 target_link_libraries(testbin PRIVATE Catch2::Catch2WithMain)
 target_include_directories(testbin PRIVATE ${PROJECT_SOURCE_DIR}/include)
 include(CTest)
