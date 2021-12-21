@@ -1,4 +1,4 @@
-#include "../ctpg.hpp"
+#include <ctpg/ctpg.hpp>
 
 #include <iostream>
 

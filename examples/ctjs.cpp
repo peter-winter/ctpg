@@ -2,7 +2,7 @@
 Compile Time JSON Parser example
 */
 
-#include "../ctpg.hpp"
+#include <ctpg/ctpg.hpp>
 
 #include <iostream>
 #include <variant>

@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.12)
+project(language LANGUAGES CXX)
+find_package(ctpg CONFIG REQUIRED)
+include_directories(${ctpg_INCLUDE_DIR})
+add_executable(${PROJECT_NAME} language.cpp)
+target_link_libraries(${PROJECT_NAME} ctpg::ctpg)

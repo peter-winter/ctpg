@@ -1,8 +1,6 @@
 #ifndef CTPG_H
 #define CTPG_H
 
-constexpr const char* version_str = "1.3.4";
-
 #include <utility>
 #include <type_traits>
 #include <cstdint>
@@ -639,9 +637,9 @@ namespace ftors
         true>
     {
         template<typename Container, typename Arg, typename... Rest>
-        constexpr decltype(auto) operator()(ignore<Skip1>..., Container &&container, ignore<Skip2>..., Arg&& arg, Rest&&...) const
+        constexpr decltype(auto) operator()(ignore<Skip1>..., Container &&container, ignore<Skip2>..., const Arg& arg, Rest&&...) const
         {
-            container.emplace_back(std::move(arg));
+            container.push_back(arg);
             return std::move(container);
         }
     };
@@ -660,9 +658,9 @@ namespace ftors
         false>
     {
         template<typename Container, typename Arg, typename... Rest>
-        constexpr decltype(auto) operator()(ignore<Skip1>..., Arg&& arg, ignore<Skip2>..., Container &&container, Rest&&...) const
+        constexpr decltype(auto) operator()(ignore<Skip1>..., const Arg& arg, ignore<Skip2>..., Container &&container, Rest&&...) const
         {
-            container.emplace_back(std::move(arg));
+            container.push_back(arg);
             return std::move(container);
         }
     };
@@ -780,7 +778,7 @@ struct source_point
     friend std::ostream& operator << (std::ostream& o, const source_point& sp);
 };
 
-std::ostream& operator << (std::ostream& o, const source_point& sp)
+inline std::ostream& operator << (std::ostream& o, const source_point& sp)
 {
     o << "[" << sp.line << ":" << sp.column << "]";
     return o;

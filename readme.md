@@ -6,6 +6,7 @@ What's more, the generated parser is actually itself capable of parsing in compi
 All it needs is a C++17 compiler!
 
 ### Contents
+* [Instalation](#instalation)
 * [Usage](#usage)
 * [Explanation](#explanation)
     * [Header](#header)
@@ -32,12 +33,35 @@ All it needs is a C++17 compiler!
 * [Regular expressions](#regular-expressions)
 * [Diagnostics](#diagnostics)
 
+## Instalation
+
+### Option 1.
+
+It is a single header library. You can just copy the *ctpg.hpp* header wherever you want.
+
+### Option 2.
+
+Use *cmake* to build the library:
+
+```
+git clone https://github.com/peter-winter/ctpg
+cd ctpg
+mkdir build
+cd build
+cmake ..
+make
+make test       #optionally
+make install    #needs appropriate permissions (root)
+```
+
+This option allows integrating CTPG into dependent cmake projects.
+
 ## Usage
 Following code demonstrates a simple parser which takes a comma separated list of integer numbers as argument and prints a sum of them.
 
-**`readme_example.cpp`**
+**`readme-example.cpp`**
 ```c++
-#include "ctpg.hpp"
+#include <ctpg/ctpg.hpp>
 #include <iostream>
 #include <charconv>
 
@@ -63,7 +87,7 @@ constexpr parser p(
     rules(
         list(number) >=
             to_int,
-        list(list, ',', number) 
+        list(list, ',', number)
             >= [](int sum, char, const auto& n){ return sum + to_int(n); }
     )
 );
@@ -83,13 +107,13 @@ int main(int argc, char* argv[])
 Compile and run:
 
 ```sh
-g++ readme_example.cpp -std=c++17 -o example && example "10, 20, 30"
+g++ readme-example.cpp -std=c++17 -o example && example "10, 20, 30"
 ```
 
 You should see the output : 60. If incorrect text supplied as an argument:
 
 ```sh
-g++ readme_example.cpp -std=c++17 -o example && example "1, 2, 3x"
+g++ readme-example.cpp -std=c++17 -o example && example "1, 2, 3x"
 ```
 you should see:
 ```
@@ -135,7 +159,7 @@ Names are handy to diagnose problems with the grammar. If omitted, the name will
 
 ### Nonterminal symbols
 
-Nonterminal symbols (short: nonterms) are essentially all non atomic symbols in the grammar. 
+Nonterminal symbols (short: nonterms) are essentially all non atomic symbols in the grammar.
 In C++ language these are things like: expression, class definition, function declaration etc.
 
 To define a nonterm use the ```nterm``` class.
@@ -155,7 +179,7 @@ Template parameter ```<int>``` in this case is a **value type**. More on this co
 The ```parser``` class together with its template deduction guides allows to define parsers using 4 arguments:
 
 * Grammar root - symbol which is a top level nonterm for a grammar.
-* List of all terms 
+* List of all terms
 * List of all nonterms
 * List of rules
 
@@ -170,7 +194,7 @@ constexpr parser p(
     terms(',', number),         
     nterms(list),  
 ```
-**Grammar root.** 
+**Grammar root.**
 
 When the root symbol gets matched (in this case ```list```) the parse is successful.
 
@@ -180,7 +204,7 @@ List of terms enclosed in a ```terms``` call. In our case there are two: ```numb
 
 > Note: the ```,``` term is not defined earlier in the code.
 It is an implicit ```char_term```. The code implicitly converts the char to the ```char_term``` class.
-Therefore ```char_terms``` (as well as ```string_terms```) are allowed not to be defined in advance. Their debug names are assigned to 
+Therefore ```char_terms``` (as well as ```string_terms```) are allowed not to be defined in advance. Their debug names are assigned to
 the them by default to a char (or a string) they represent.
 
 **Nonterm list.**
@@ -226,7 +250,7 @@ a value type for the ```regex_term```.
 **Value types for terms**
 
 Terms unlike nonterms (which have their value types defined as a template parameter to the nterm definition),
-have their value types predefined to either a ```term_value<char>``` for a ```char_term```, and a ```term_value<std::string_view>``` 
+have their value types predefined to either a ```term_value<char>``` for a ```char_term```, and a ```term_value<std::string_view>```
 for both ```regex_term``` and ```string_term```.
 
 The ```term_value``` class template is a simple wrapper that is implicitly convertible to it's template parameter (either a ```char``` or ```std::string_view```).
@@ -265,7 +289,7 @@ Use the ```.has_value()``` and the ```.value()``` to check and access the result
 ## Compile time parsing
 
 Example code can be easily changed to create an actual constexpr parser.
-First, all the functors need to be constexpr. 
+First, all the functors need to be constexpr.
 To achieve this change the ```to_int``` function to:
 
 ```c++
@@ -290,12 +314,12 @@ int main(int argc, char* argv[])
     if (argc < 2)
     {
         constexpr char example_text[] = "1, 20, 3";
-        
+
         constexpr auto cres = p.parse(cstring_buffer(example_text)); // notice cstring_buffer and no std::err output
         std::cout << cres.value() << std::endl;
         return 0;
     }
-        
+
     auto res = p.parse(string_buffer(argv[1]), std::cerr);
     bool success = res.has_value();
     if (success)
@@ -304,10 +328,10 @@ int main(int argc, char* argv[])
 }
 ```
 
-Now when no argument is passed to the program, it prints the compile time result of parsing "1, 20, 3". 
+Now when no argument is passed to the program, it prints the compile time result of parsing "1, 20, 3".
 
 ```sh
-g++ readme_example.cpp -std=c++17 -o example && example
+g++ readme-example.cpp -std=c++17 -o example && example
 ```
 should print the number 24.
 
@@ -323,12 +347,12 @@ constexpr int cres = p.parse(cstring_buffer(example_text)).value();
 would cause compilation error, because throwing ```std::bad_optional_access``` is not _constexpr_.
 
 ## LR(1) parser
-   
+
 CTPG uses a LR(1) parser. This is short from left-to-right and 1 lookahead symbol.
 
 ### Algorithm
 
-The parser uses a parse table which is somewhat resembling a state machine. 
+The parser uses a parse table which is somewhat resembling a state machine.
 Here is pseudo code for the algorithm:
 
 ```
@@ -337,45 +361,45 @@ struct entry
    int rule_length   // valid if reduce
    int nterm_nr      // valid if reduce   
    enum kind {success, shift, reduce, error }
-   
+
 bool parse(input, sr_table[states_count][terms_count], goto_table[states_count][nterms_count])
    state = 0
    states.push(state)
    needs_term = true;
-   
+
    while (true)
       if (needs_term)
          term_nr = get_next_term(input)
       entry = sr_table[state, term_nr]
       kind = entry.kind
-           
+
       if (kind == success)
          return true
-         
+
       else if (kind == shift)
          needs_term = true;
          state = entry.next
          states.push(state)
          continue
-         
+
       else if (kind == reduce)
          states.pop_n(entry.rule_length)
          state = states.top()
          state = goto_table[state, entry.nterm_nr]
          continue
-         
+
       else
          return false
 ```
 
 Parser contains a state stack, which grows when the algorithm encounters a _shift_ operation and shrinks on _reduce_ operation.
 
-Aside from a state stack, there is also a value stack for dedicated for parse result calculation. 
+Aside from a state stack, there is also a value stack for dedicated for parse result calculation.
 Each _shift_ pushes a value to the stack and each _reduce_ calls an appropriate functor with values from a value stack, removing values from a stack and replacing them with a single value associated with a rule's left side.
 
 **Table creation**
 
-This topic is out of scope of this manual. There is plenty of material online on LR parsers. 
+This topic is out of scope of this manual. There is plenty of material online on LR parsers.
 Recomended book on the topic: [Compilers: Principles, Techniques and Tools](https://en.wikipedia.org/wiki/Compilers:_Principles,_Techniques,_and_Tools)
 
 ### Conflicts
@@ -432,7 +456,7 @@ constexpr parser p(
 );
 ```
 
-The higher the precedence value set, the higher the term precedence. Default term precedence is equal to 0. 
+The higher the precedence value set, the higher the term precedence. Default term precedence is equal to 0.
 
 This explicit precedence definition allows a ```*``` operator to have bigger precedence over ```+```.
 
@@ -458,7 +482,7 @@ constexpr parser p(
 ```
 
 Binary ```-``` and ```+``` operators have the same precedence in pretty much all languages.
-Unary ```-``` however almost always have a bigger precedence than all binary operators. 
+Unary ```-``` however almost always have a bigger precedence than all binary operators.
 We can't achieve this by simply defining ```-``` precedence in ```char_term``` definition.
 We need a way to tell that ```expr('-', expr)``` has a bigger precedence then all binary rules.
 
@@ -497,7 +521,7 @@ Consider the final code and let's say the input is ```2 + 2 + 2```, parser has r
 In this case what is the required behaviour? Should the first ```2 + 2``` be reduced or a second ```+``` should be shifted?
 (This may not matter in case of integer calculations, but may have a big difference in situations like expression type deduction in c++ when operator overloading is involved.)
 
-This is the classic **associativity** case which can be solved by expicitly defining the term associativity. 
+This is the classic **associativity** case which can be solved by expicitly defining the term associativity.
 
 There are 3 types of associativity available: _left to right_, _right to left_ and _not associative_ as the default.
 
@@ -544,7 +568,7 @@ constexpr parser p(
     nterms(special_op, op),
     rules(
         special_op('!'),
-        op('!'), 
+        op('!'),
         op('*'),
         op('+'),
         op(special_op)
@@ -615,7 +639,7 @@ constexpr parser p(
     terms(name),
     nterms(list),
     rules(
-        list() 
+        list()
             >= [](){ return list_type{}; },
         list(list, name)
             >= [](auto&& list, auto&& name){ list.push_back(name); return std::move(list); }
@@ -647,13 +671,13 @@ constexpr parser p(
     terms('0', '1', '&', '|'),
     nterms(binary),
     rules(
-        binary('0') 
+        binary('0')
             >= val(false),
-        binary('1') 
+        binary('1')
             >= val(true),
-        binary(binary, '&', binary) 
+        binary(binary, '&', binary)
             >= [](bool b1, auto, bool b2){ return b1 & b2; },
-        binary(binary, '|', binary) 
+        binary(binary, '|', binary)
             >= [](bool b1, auto, bool b2){ return b1 | b2; },
     )
 );   
@@ -674,7 +698,7 @@ constexpr parser p(
     terms(name),
     nterms(list),
     rules(
-        list() 
+        list()
             >= create<list_type>{},    // use instead of a lambda
         list(list, name)
             >= [](auto&& list, auto&& name){ list.push_back(name); return std::move(list); }
@@ -734,7 +758,7 @@ constexpr parser p(
     terms(name),
     nterms(list),
     rules(
-        list() 
+        list()
             >= create<list_type>{},
         list(list, name)
             >= push_back{}
@@ -742,7 +766,7 @@ constexpr parser p(
 );
 ```
 
-Both ```push_back``` an ```emplace_back``` are class templates, which take two indexes (like in case of element placeholders one-indexed), 
+Both ```push_back``` an ```emplace_back``` are class templates, which take two indexes (like in case of element placeholders one-indexed),
 denoting element numbers for the list and the value to append.
 
 So in case of comma separeted numbers, we can simply use:
@@ -844,7 +868,7 @@ Each of these types have the ```source_point``` member that can be accessed usin
 
 The ```source_point``` struct has a ```line``` and ```column``` public members and can be output to a stream using ```<<``` operator.
 
-This is an example of a parser that accepts a whitespace separated words and stores them in a collection together with their source points. 
+This is an example of a parser that accepts a whitespace separated words and stores them in a collection together with their source points.
 
 Take a look on the functor that utilises both value and source point of a word using ```const auto& w``` argument by calling ```get_value()``` and ```get_sp()``` respectively.
 
@@ -949,8 +973,8 @@ and ignoring all passed arguments to it.
 In fact any callble object which accepts ```std::string_view``` can be used instead of ```create```, this is just an example.
 The ```plus``` term has a value type identical to the return type of the functor, ```plus_tag``` in this case.
 
-Take a look at the **`typed_terms.cpp`** in the examples, it uses this feature to create a simple calculator, but instead of the
-runtime switch statement on the char value like in the **`simple_expr_parser.cpp`**, the functor object has an overload for each arithmetic operator.
+Take a look at the **`typed-terms.cpp`** in the examples, it uses this feature to create a simple calculator, but instead of the
+runtime switch statement on the char value like in the **`simple-expr-parser.cpp`**, the functor object has an overload for each arithmetic operator.
 
 >Note: Typed terms cannot use their implicit versions like the basic terms (```char_term```, ```string_term```) in the rules. They have to be
 >referrenced by the typed_terms object.
@@ -959,7 +983,7 @@ runtime switch statement on the char value like in the **`simple_expr_parser.cpp
 
 If a special ***error*** term in a rule is used, the parser tries to recover from syntax error.
 
-Consider the example from **error_recovery.cpp** example (here, simplified):
+Consider the example from **error-recovery.cpp** example (here, simplified):
 
 ```c++
 constexpr parser p(
@@ -991,7 +1015,7 @@ Recovery follows the rules:
 - terminals are consumed and ignored until the terminal which would not result in a syntax error is encountered.
    - if at any point end of input is encountered, the algorithm fails.
 
-To see how ***error*** in rules affect the parse table generation take a look at the diagnostic output and look for the <error_recovery_token> occurrences. 
+To see how ***error*** in rules affect the parse table generation take a look at the diagnostic output and look for the <error_recovery_token> occurrences.
 See the [Diagnostics](#diagnostics) section for details.
 
 ## Regular expressions
@@ -1039,7 +1063,7 @@ The output contains 2 sections: one for syntax analyzer starting with the word *
 Parser Object size: 51576
 ```
 
-First information in the secion is the size of the parser object. This may easily be couple of megabytes for some complex grammars, so consider declaring the parser as 
+First information in the secion is the size of the parser object. This may easily be couple of megabytes for some complex grammars, so consider declaring the parser as
 a static object rather than on local stack.
 
 Next there is a state machine description in form of:
@@ -1075,7 +1099,7 @@ Goto and shift actions are basically the same, only difference is goto action re
 They both refer to the ```.``` in the situation, that is, given the symbol after the ```.``` in this state, parser goes to a new state with a <state_nr>.
 
 Reduce actions occur when the whole rule is matched, hence the reduce actions are present only when the state contains a situation with ```.``` at the end.
-What the action means is: given the <term> reduce using rule with a <rule_nr>. 
+What the action means is: given the <term> reduce using rule with a <rule_nr>.
 Rules are numbered according to the apearance in the source code (in the ```rules``` call during the parser definition) starting from 0.
 
 ### Conflicts
@@ -1111,8 +1135,7 @@ Character descriptions can also contain character range in form: ```[start-end]`
 
 There will be unreachable states in the form:
 ```
-STATE <nr> (unreachable) 
+STATE <nr> (unreachable)
 ```
 
 These are leftovers from the regular expression to DFA conversion, just ignore them.
-
