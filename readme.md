@@ -37,7 +37,7 @@ All it needs is a C++17 compiler!
 
 ### Option 1.
 
-It is a single header library. You can just copy the *ctpg.hpp* header wherever you want.
+It is a single header library. You can just copy the *include/ctpg.hpp* header wherever you want.
 
 ### Option 2.
 
