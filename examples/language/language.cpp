@@ -1,18 +1,26 @@
 /*
 A simple language parser, demonstrates how to set up a language parser with a
 abstract syntax tree builder.
-Use sample file examples/language/samples/1 to parser and see the results
 
-Compile:
-g++ ./examples/language/language.cpp -std=c++17 -o ./bin/a.out
+Look at the CMakeLists.txt to see how to integrate CTPG into your CMake projects
 
-Provide a text file as an argument:
-./bin/a.out "$(cat ./examples/language/samples/1)"
+Build in a separate build direcotry:
+mkdir build
+cd build
+cmake ..
+make
 
-When no input string as an argument is provided program prints a parser diagnostic messsage.
+Run (in this directory):
+
+./build/language "$(cat ./samples/1)"
+
+When no input string as an argument is provided program prints a parser diagnostic message.
 */
 
-#include "../../ctpg.hpp"
+// The header file normally sits in its own directory, somewhere like: /usr/local/include/ctpg/ctpg.hpp
+// but this time CMake dealt with it so there is no need for #include <ctpg/ctpg.hpp>
+#include <ctpg.hpp>
+
 #include "ast_builder.hpp"
 
 using namespace ctpg;

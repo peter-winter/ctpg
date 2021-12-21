@@ -1,5 +1,5 @@
-#include <catch2/catch.hpp>
-#include "../ctpg.hpp"
+#include <catch2/catch_test_macros.hpp>
+#include <ctpg.hpp>
 
 
 constexpr char pattern_single_char[] = "s";

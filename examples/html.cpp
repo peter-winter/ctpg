@@ -5,7 +5,7 @@ Texts and attributes are a trivial task to add
 This example shows how to take advantage of the fact that the parser is defined in c++.
 Here both terms and rules are generated from tag names
 */
-#include "../ctpg.hpp"
+#include <ctpg/ctpg.hpp>
 
 #include <iostream>
 #include <vector>

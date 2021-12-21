@@ -1,7 +1,7 @@
 #include <iostream>
 #include <sstream>
 
-#include "../ctpg.hpp"
+#include <ctpg/ctpg.hpp>
 
 using namespace ctpg;
 
