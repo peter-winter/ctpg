@@ -27,7 +27,7 @@ jobs:
       run: sudo apt-get install -y ${{matrix.compiler}}
       
     - name: Install catch2
-      run : sudo apt install -y catch2
+      run: sudo apt-get install -y catch2
        
     - name: Configure CMake
       env:
