@@ -1,3 +1,5 @@
+[![Build](https://github.com/peter-winter/ctpg/actions/workflows/cmake.yml/badge.svg)](https://github.com/peter-winter/ctpg/actions/workflows/cmake.yml)
+
 # CTPG
 ## _C++ Compile Time Parser Generator_
 
