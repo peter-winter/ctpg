@@ -19,8 +19,8 @@ jobs:
           - g++-10
           - clang++-12
         include:
-          - cxx: g++10
-            compiler: g++10
+          - cxx: g++-10
+            compiler: g++-10
           - cxx: clang++-12
             compiler: clang++-12
     steps:
