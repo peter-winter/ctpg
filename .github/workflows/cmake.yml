@@ -23,8 +23,8 @@ jobs:
 
     - name: install catch2 v3
       run : |
-       git clone https://github.com/catchorg/catch2
-       cd catch2
+       git clone https://github.com/catchorg/Catch2
+       cd Catch2
        mkdir build
        cd build
        cmake -Bbuild -H. -DBUILD_TESTING=OFF
