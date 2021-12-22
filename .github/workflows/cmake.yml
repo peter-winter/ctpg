@@ -18,10 +18,18 @@ jobs:
         cxx:
           - g++-10
           - clang++-12
+        include:
+          - cxx: g++10
+            compiler: g++10
+          - cxx: clang++-12
+            compiler: clang++-12
     steps:
     - uses: actions/checkout@v2
 
-    - name: install catch2 v3
+    - name: Prepare compiler
+      run: sudo apt-get install -y ${{matrix.compiler}}
+      
+    - name: Install catch2 v3
       run : |
        git clone https://github.com/catchorg/Catch2
        cd Catch2
