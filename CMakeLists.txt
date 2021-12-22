@@ -34,7 +34,7 @@ add_executable(testbin
     tests/error_recovery.cpp
     tests/buffers.cpp
 )
-target_compile_features(testbin INTERFACE cxx_std_17)
+target_compile_features(testbin PUBLIC cxx_std_17)
 target_link_libraries(testbin PRIVATE Catch2::Catch2WithMain)
 target_include_directories(testbin PRIVATE ${PROJECT_SOURCE_DIR}/include)
 include(CTest)
