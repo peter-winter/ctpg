@@ -27,7 +27,11 @@ jobs:
       run: sudo apt-get install -y ${{matrix.compiler}}
       
     - name: Install catch2
-      run: sudo apt-get install -y catch2
+      run: |
+        git clone --branch v2.x https://github.com/catchorg/Catch2
+        cd Catch2
+        cmake -Bbuild -H. -DBUILD_TESTING=OFF
+        sudo cmake --build build/ --target install
        
     - name: Configure CMake
       env:
