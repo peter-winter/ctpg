@@ -26,9 +26,8 @@ jobs:
     - name: Prepare compiler
       run: sudo apt-get install -y ${{matrix.compiler}}
       
-    - name: Install catch2 v3
-      run : |
-       brew install doctest
+    - name: Install doctest
+      run : brew install doctest
        
     - name: Configure CMake
       env:
