@@ -28,10 +28,7 @@ jobs:
       
     - name: Install catch2 v3
       run : |
-       git clone https://github.com/catchorg/Catch2
-       cd Catch2
-       cmake -Bbuild -H. -DBUILD_TESTING=OFF
-       sudo cmake --build build/ --target install
+       brew install doctest
        
     - name: Configure CMake
       env:
