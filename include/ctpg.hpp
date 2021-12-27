@@ -3155,7 +3155,7 @@ namespace regex
             rules(
                 number(regex_digit_09),
                 number(number, regex_digit_09) >= [](size32_t n, size32_t x){ return n * 10 + x; },
-                primary(regex_digit_09) >= [&b](char c){ return b.primary_char(c); },
+                primary(regex_digit_09) >= [&b](char c){ return b.primary_char(c + '0'); },
                 primary(regex_primary) >= [&b](const auto& s){ return b.primary_subset(s); },
                 primary('(', expr, ')') >= _e2,
                 q_expr(primary),
