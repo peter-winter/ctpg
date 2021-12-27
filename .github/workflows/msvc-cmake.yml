@@ -15,9 +15,8 @@ jobs:
 
     - name: Install Catch2
       run: |
-        cd %VCPKG_INSTALLATION_ROOT%
-        vcpkg integrate install
-        vcpkg install catch2
+        %VCPKG_INSTALLATION_ROOT% integrate install
+        %VCPKG_INSTALLATION_ROOT% install catch2
     
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}\build -DCMAKE_TOOLCHAIN_FILE=%VCPKG_INSTALLATION_ROOT%\scripts\buildsystems\vcpkg.cmake
