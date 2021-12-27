@@ -333,8 +333,8 @@ namespace stdex
 
     private:
         T data[N];
-        std::size_t end;
         std::size_t start;
+        std::size_t end;
         std::size_t size_;
     };
 
@@ -391,7 +391,7 @@ namespace utils
 
     constexpr bool is_hex_digit(char c)
     {
-        return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F';
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
     }
 
     constexpr bool is_dec_digit(char c)
@@ -1043,12 +1043,12 @@ namespace regex
 
     constexpr char hex_digits_to_char(char d1, char d2)
     {
-        auto dd = [](char d)
+        auto dd = [](char d) -> char
         {
             if (d >= 'A' && d <= 'F')
-                return 10 + d - 'A';
+                return char(10) + d - 'A';
             else if (d >= 'a' && d <= 'f')
-                return 10 + d - 'a';
+                return char(10) + d - 'a';
             else
                 return d - '0';
         };
@@ -1555,9 +1555,9 @@ namespace detail
             f(std::move(f)), l(l), r(r), precedence(precedence)
         {}
 
-        constexpr auto operator[](int precedence)
+        constexpr auto operator[](int prec)
         {
-            return rule<F, L, R...>(std::move(f), l, r, precedence);
+            return rule<F, L, R...>(std::move(f), l, r, prec);
         }
 
         template<typename F1>
@@ -1755,16 +1755,16 @@ class parser<
 
 public:
     constexpr parser(
-        root_nterm_type root,
+        root_nterm_type grammar_root,
         term_tuple_type terms,
         nterm_tuple_type nterms,
         rule_tuple_type&& rules,
         LexerUsage):
-        parser(root, terms, nterms, std::move(rules))
+        parser(grammar_root, terms, nterms, std::move(rules))
     {}
 
     constexpr parser(
-        root_nterm_type root,
+        root_nterm_type grammar_root,
         term_tuple_type terms,
         nterm_tuple_type nterms,
         rule_tuple_type&& rules):
@@ -1778,7 +1778,7 @@ public:
         analyze_terms(seq_for_terms);
         analyze_eof();
         analyze_error_recovery_token();
-        analyze_rules(std::make_index_sequence<std::tuple_size_v<rule_tuple_type>>{}, root);
+        analyze_rules(std::make_index_sequence<std::tuple_size_v<rule_tuple_type>>{}, grammar_root);
         analyze_states();
 
         create_lexer(seq_for_terms);
@@ -1800,8 +1800,6 @@ public:
     template<typename Buffer, typename ErrorStream>
     constexpr std::optional<root_value_type> parse(parse_options options, const Buffer& buffer, ErrorStream& error_stream) const
     {
-        using iterator = buffers::iterator_t<Buffer>;
-
         detail::parser_value_stack_type_t<Buffer, empty_rules_count, value_variant_type> value_stack{};
         detail::parse_table_cursor_stack_type_t<Buffer, empty_rules_count> cursor_stack{};
 
@@ -2093,7 +2091,7 @@ private:
         return uninitialized16;
     }
 
-    constexpr int calculate_rule_precedence(int precedence, size16_t rule_idx, size16_t rule_size) const
+    constexpr int calculate_rule_precedence(int precedence, size16_t rule_idx) const
     {
         if (precedence != 0)
             return precedence;
@@ -2103,7 +2101,7 @@ private:
         return 0;
     }
 
-    constexpr associativity calculate_rule_associativity(size16_t rule_idx, size16_t rule_size) const
+    constexpr associativity calculate_rule_associativity(size16_t rule_idx) const
     {
         size16_t last_term_idx = rule_last_terms[rule_idx];
         if (last_term_idx != uninitialized16)
@@ -2119,8 +2117,8 @@ private:
         constexpr size16_t rule_elements_count = size16_t(sizeof...(R));
         rule_infos[Nr] = { l_idx, size16_t(Nr), rule_elements_count };
         rule_last_terms[Nr] = calculate_rule_last_term(Nr, rule_elements_count);
-        rule_precedences[Nr] = calculate_rule_precedence(r.get_precedence(), Nr, rule_elements_count);
-        rule_associativities[Nr] = calculate_rule_associativity(Nr, rule_elements_count);
+        rule_precedences[Nr] = calculate_rule_precedence(r.get_precedence(), Nr);
+        rule_associativities[Nr] = calculate_rule_associativity(Nr);
         if constexpr (Nr != root_rule_idx)
         {
             value_reductors[Nr] = &reduce_value<Nr, F, value_type_t<L>, value_type_t<R>...>;
@@ -2130,7 +2128,7 @@ private:
     struct state_analyze_info
     {
         situation_queue_t situation_queue = { };
-        stdex::cvector<size16_t, situation_address_space_size> closures[situation_address_space_size] = {};
+        stdex::cvector<size32_t, situation_address_space_size> closures[situation_address_space_size] = {};
         stdex::cbitset<situation_address_space_size> done_closures = {};
         term_subset situation_first_after[situation_address_space_size] = { };
         situation_set situation_first_after_analyzed = {};
@@ -2302,14 +2300,14 @@ private:
         {
             size16_t nt = s.idx;
             const term_subset& first = make_situation_first_after(addr, idx, sai);
-            const utils::slice& s = nterm_rule_slices[nt];
-            for (auto i = 0u; i < s.n; ++i)
+            const utils::slice& sl = nterm_rule_slices[nt];
+            for (auto i = 0u; i < sl.n; ++i)
             {
                 for (size16_t t = 0; t < term_count; ++t)
                 {
                     if (first.test(t))
                     {
-                        size32_t new_s_idx = make_situation_idx(situation_info{ size16_t(s.start + i), 0, t });
+                        size32_t new_s_idx = make_situation_idx(situation_info{ size16_t(sl.start + i), 0, t });
                         add_situation_to_state(state_idx, new_s_idx, sai);
                         sai.closures[idx].push_back(new_s_idx);
                     }
@@ -2828,7 +2826,7 @@ constexpr auto rules(Rules&&... rules)
 struct skip
 {
     template<typename T>
-    constexpr skip(T&&) {};
+    constexpr skip(T&&) {}
 };
 
 namespace regex
@@ -2841,14 +2839,14 @@ namespace regex
             //0              1             2 3 4 5 6 7 8 9
             //regex_digit_09 regex_primary * + ? | ( ) { }
 
-            specials['*'] = 2;
-            specials['+'] = 3;
-            specials['?'] = 4;
-            specials['|'] = 5;
-            specials['('] = 6;
-            specials[')'] = 7;
-            specials['{'] = 8;
-            specials['}'] = 9;
+            specials[utils::char_to_idx('*')] = 2;
+            specials[utils::char_to_idx('+')] = 3;
+            specials[utils::char_to_idx('?')] = 4;
+            specials[utils::char_to_idx('|')] = 5;
+            specials[utils::char_to_idx('(')] = 6;
+            specials[utils::char_to_idx(')')] = 7;
+            specials[utils::char_to_idx('{')] = 8;
+            specials[utils::char_to_idx('}')] = 9;
         }
 
         template<typename Iterator, typename ErrorStream>
@@ -2867,8 +2865,8 @@ namespace regex
             auto res = [&](size16_t idx, size_t len)
             { return recognized(idx, len, options, sp, start, error_stream); };
 
-            if (specials[c] != 0)
-                return res(specials[c], 1);
+            if (specials[utils::char_to_idx(c)] != 0)
+                return res(specials[utils::char_to_idx(c)], 1);
 
             if (utils::is_dec_digit(c))
                 return res(0, 1);
@@ -2979,8 +2977,8 @@ namespace regex
                     return false;
 
                 size_t range_end_len = 0;
-                bool ok = match_escaped(start, end, range_end_len);
-                if (!ok)
+                bool escaped_ok = match_escaped(start, end, range_end_len);
+                if (!escaped_ok)
                     return false;
 
                 if (range_end_len == 0)
@@ -3155,18 +3153,18 @@ namespace regex
             rules(
                 number(regex_digit_09),
                 number(number, regex_digit_09) >= [](size32_t n, size32_t x){ return n * 10 + x; },
-                primary(regex_digit_09) >= [&b](char c){ return b.primary_char(c + '0'); },
+                primary(regex_digit_09) >= [&b](size32_t number){ return b.primary_char(char(number + '0')); },
                 primary(regex_primary) >= [&b](const auto& s){ return b.primary_subset(s); },
                 primary('(', expr, ')') >= _e2,
                 q_expr(primary),
-                q_expr(primary, '*') >= [&b](slice p, skip) { return b.star(p); },
-                q_expr(primary, '+') >= [&b](slice p, skip) { return b.plus(p); },
-                q_expr(primary, '?') >= [&b](slice p, skip) { return b.opt(p); },
-                q_expr(primary, '{', number, '}') >= [&b](slice p, skip, size32_t n, skip) { return b.rep(p, n); },
+                q_expr(primary, '*') >= [&b](slice s, skip) { return b.star(s); },
+                q_expr(primary, '+') >= [&b](slice s, skip) { return b.plus(s); },
+                q_expr(primary, '?') >= [&b](slice s, skip) { return b.opt(s); },
+                q_expr(primary, '{', number, '}') >= [&b](slice s, skip, size32_t n, skip) { return b.rep(s, n); },
                 concat(q_expr),
-                concat(concat, q_expr) >= [&b](slice p1, slice p2) { return b.cat(p1, p2); },
+                concat(concat, q_expr) >= [&b](slice s1, slice s2) { return b.cat(s1, s2); },
                 alt(concat),
-                alt(alt, '|', alt) >= [&b](slice p1, skip, slice p2) { return b.alt(p1, p2); },
+                alt(alt, '|', alt) >= [&b](slice s1, skip, slice s2) { return b.alt(s1, s2); },
                 expr(alt)
             ),
             use_lexer<regex_lexer>{}
