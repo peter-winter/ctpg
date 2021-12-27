@@ -15,9 +15,7 @@ jobs:
 
     - name: Install Catch2
       run: |
-        git clone https://github.com/Microsoft/vcpkg.git
-        cd vcpkg
-        bootstrap-vcpkg.bat
+        cd %VCPKG_INSTALLATION_ROOT%
         vcpkg integrate install
         vcpkg install catch2
     
