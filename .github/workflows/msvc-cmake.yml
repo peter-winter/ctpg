@@ -19,7 +19,7 @@ jobs:
         vcpkg install catch2:x64-windows
     
     - name: Configure CMake
-      run: cmake -B ${{github.workspace}}\build
+      run: cmake -B ${{github.workspace}}\build -DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}\scripts\buildsystems\vcpkg.cmake
 
     - name: Build
       run: cmake --build ${{github.workspace}}\build
