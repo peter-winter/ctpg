@@ -6,6 +6,13 @@ project("ctpg" VERSION 1.3.4
 
 include(GNUInstallDirs)
 
+if (MSVC)
+    add_compile_options(/W4 /WX)
+else()
+    add_compile_options(-Wall -Wextra -pedantic -Werror)
+endif()
+
+
 add_library(${PROJECT_NAME} INTERFACE)
 
 target_include_directories(
@@ -15,7 +22,6 @@ target_include_directories(
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_17)
-
 
 # Test
 find_package(Catch2 REQUIRED)

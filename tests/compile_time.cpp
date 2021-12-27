@@ -5,23 +5,26 @@ using namespace ctpg;
 using namespace ctpg::ftors;
 using namespace ctpg::buffers;
 
-constexpr nterm<int> root("root");
+namespace test
+{
+    constexpr nterm<int> root("root");
 
-constexpr parser p(
-    root,
-    terms('*'),
-    nterms(root),
-    rules(
-        root('*') >= val(1),
-        root(root, '*') >= [](int sum, skip){ return sum + 1; }
-    )
-);
-
-constexpr auto result = p.parse(cstring_buffer("****"));
-constexpr int v = result.value();
+    constexpr parser p(
+        root,
+        terms('*'),
+        nterms(root),
+        rules(
+            root('*') >= val(1),
+            root(root, '*') >= [](int sum, skip){ return sum + 1; }
+        )
+    );
+}
 
 TEST_CASE("constexpr", "[compile time]")
 {
+    constexpr auto result = test::p.parse(cstring_buffer("****"));
+    constexpr int v = result.value();
+
     REQUIRE(result.has_value());
     REQUIRE(v == 4);
 }
