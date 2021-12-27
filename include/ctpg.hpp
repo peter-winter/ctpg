@@ -1221,7 +1221,7 @@ namespace regex
                     for (auto& t : st.transitions)
                     {
                         if (t != uninitialized16)
-                            t += s.n * (i + 1);
+                            t += size16_t(s.n * (i + 1));
                     }
                 }
             }
@@ -1253,7 +1253,7 @@ namespace regex
             return slice{ s1.start, s1.n + s2.n };
         }
 
-        constexpr void mark_end_states(slice s, size_t idx)
+        constexpr void mark_end_states(slice s, size16_t idx)
         {
             for (size_t i = s.start; i < s.start + s.n; ++i)
             {
@@ -1295,7 +1295,7 @@ namespace regex
             auto& cr = s_from.conflicted_recognition;
             for (size_t j = 0; j < 4; ++j)
             {
-                size_t term_idx = cr[j];
+                size16_t term_idx = cr[j];
                 if (term_idx != uninitialized16)
                     mark_end_state(s_to, term_idx);
                 else
@@ -1303,7 +1303,7 @@ namespace regex
             }
         }
 
-        constexpr void mark_end_state(dfa_state& s, size_t idx)
+        constexpr void mark_end_state(dfa_state& s, size16_t idx)
         {
             if (!s.end_state)
                 return;
@@ -1320,7 +1320,7 @@ namespace regex
     };
 
     template<size_t N, typename Parser>
-    constexpr void add_term_data_to_dfa(char c, dfa_builder<N>& b, const Parser&, size_t idx)
+    constexpr void add_term_data_to_dfa(char c, dfa_builder<N>& b, const Parser&, size16_t idx)
     {
         using slice = utils::slice;
 
@@ -1331,7 +1331,7 @@ namespace regex
     }
 
     template<size_t N, typename Parser, size_t DataSize>
-    constexpr void add_term_data_to_dfa(const char (&str)[DataSize], dfa_builder<N>& b, const Parser&, size_t idx)
+    constexpr void add_term_data_to_dfa(const char (&str)[DataSize], dfa_builder<N>& b, const Parser&, size16_t idx)
     {
         using slice = utils::slice;
         slice prev{0, size32_t(b.size())};
@@ -1352,7 +1352,7 @@ namespace regex
         const regex_pattern_data<PatternSize>& pattern_data,
         dfa_builder<N>& b,
         const Parser& p,
-        size_t idx)
+        size16_t idx)
     {
         using slice = utils::slice;
         detail::no_stream s{};
@@ -2149,10 +2149,10 @@ private:
 
     constexpr situation_info make_situation_info(size32_t idx) const
     {
-        size16_t t = idx % term_count;
+        size16_t t = size16_t(idx % term_count);
         idx /= term_count;
-        size16_t after = idx % situation_size;
-        size16_t rule_info_idx = idx / situation_size;
+        size16_t after = size16_t(idx % situation_size);
+        size16_t rule_info_idx = size16_t(idx / situation_size);
         return situation_info{ rule_info_idx, after, t };
     }
 
@@ -2764,11 +2764,11 @@ private:
             regex::dfa_builder<lexer_dfa_size> b(lexer_sm);
             constexpr bool trivial_lexer = (true && ... && std::tuple_element_t<I, term_tuple_type>::is_trivial);
             if constexpr (trivial_lexer)
-                (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, no_parser{}, I)), ...);
+                (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, no_parser{}, size16_t(I))), ...);
             else
             {
                 auto p = regex::create_regex_parser(b);
-                (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, p, I)), ...);
+                (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, p, size16_t(I))), ...);
             }
         }
     }
