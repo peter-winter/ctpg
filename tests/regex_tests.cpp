@@ -28,6 +28,8 @@ constexpr char pattern_alt[] = "a|b";
 constexpr char pattern_groupping[] = "(a|b)*";
 constexpr char pattern_precedence[] = "a|bc*";
 
+constexpr char pattern_number[] = "0|[1-9][0-9]*";
+
 TEST_CASE("singe char", "[regex term]")
 {
     constexpr ctpg::regex::expr<pattern_single_char> r;
@@ -320,4 +322,16 @@ TEST_CASE("precedence", "[regex term]")
     REQUIRE( !r.match("bcbc") );
     REQUIRE( !r.match("\x20") );
     REQUIRE( !r.match("accccc") );
+}
+
+TEST_CASE("number", "[regex term]")
+{
+    constexpr ctpg::regex::expr<pattern_number> r;
+
+    REQUIRE( r.match("0") );
+    REQUIRE( r.match("1") );
+    REQUIRE( r.match("120") );
+    REQUIRE( !r.match("01") );
+    REQUIRE( !r.match("ss") );
+    REQUIRE( !r.match("") );
 }
