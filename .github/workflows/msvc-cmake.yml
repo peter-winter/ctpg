@@ -18,9 +18,11 @@ jobs:
         vcpkg integrate install
         vcpkg install catch2:x64-windows
     
+    - name: Configure CMake Toolchain
+      run: echo ("CMAKE_TOOLCHAIN_ARG=-DCMAKE_TOOLCHAIN_FILE=" + ${env:VCPKG_INSTALLATION_ROOT} + "\scripts\buildsystems\vcpkg.cmake") >> $env:GITHUB_ENV
+    
     - name: Configure CMake
       run: |
-        echo ("CMAKE_TOOLCHAIN_ARG=-DCMAKE_TOOLCHAIN_FILE=" + ${env:VCPKG_INSTALLATION_ROOT} + "\scripts\buildsystems\vcpkg.cmake") >> $env:GITHUB_ENV
         echo "${{ env.CMAKE_TOOLCHAIN_ARG }}"
         cmake -B ${{github.workspace}}\build "${{ env.CMAKE_TOOLCHAIN_ARG }}"
         
