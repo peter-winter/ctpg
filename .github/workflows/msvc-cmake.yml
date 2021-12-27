@@ -1,0 +1,33 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [ msvc-action ]
+  pull_request:
+    branches: [ msvc-action ]
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install Catch2
+      run: |
+        git clone https://github.com/Microsoft/vcpkg.git
+        cd vcpkg
+        bootstrap-vcpkg.bat
+        vcpkg integrate install
+        vcpkg install catch2
+    
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      run: ctest
+      
