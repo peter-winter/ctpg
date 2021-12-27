@@ -391,7 +391,7 @@ namespace utils
 
     constexpr bool is_hex_digit(char c)
     {
-        return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F';
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
     }
 
     constexpr bool is_dec_digit(char c)

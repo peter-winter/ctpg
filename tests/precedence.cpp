@@ -16,7 +16,7 @@ namespace test
 
     constexpr parser p(
         expr,
-        terms('1', '2', '3', '+', '*', '-', '#', '(', ')'),
+        terms('1', '2', '3', plus, minus, mul, hash, '(', ')'),
         nterms(expr),
         rules(
             expr('1') >= val(1),

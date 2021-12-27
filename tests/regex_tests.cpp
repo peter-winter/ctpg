@@ -181,6 +181,22 @@ TEST_CASE("range set", "[regex term]")
     REQUIRE( !r.match("aa") );
 }
 
+TEST_CASE("inverted range set", "[regex term]")
+{
+    constexpr ctpg::regex::expr<test::pattern_inverted_range_set> r;
+
+    REQUIRE( !r.match("a") );
+    REQUIRE( !r.match("b") );
+    REQUIRE( !r.match("z") );
+
+    REQUIRE( r.match("0") );
+    REQUIRE( r.match("A") );
+    REQUIRE( r.match("Z") );
+    REQUIRE( r.match("\x20") );
+    REQUIRE( !r.match("") );
+    REQUIRE( !r.match("aa") );
+}
+
 TEST_CASE("complex set", "[regex term]")
 {
     constexpr ctpg::regex::expr<test::pattern_complex_set> r;

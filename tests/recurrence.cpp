@@ -115,19 +115,19 @@ namespace test
 
 TEST_CASE("right recurrence, empty", "[recurrence]")
 {
-    auto result1 = test::p3.parse(cstring_buffer("1"));
+    auto result1 = test::p4.parse(cstring_buffer("1"));
     REQUIRE(result1.has_value());
     REQUIRE(result1.value() == 1);
 
-    auto result2 = test::p3.parse(cstring_buffer("11"));
+    auto result2 = test::p4.parse(cstring_buffer("11"));
     REQUIRE(result2.has_value());
     REQUIRE(result2.value() == 2);
 
-    auto result3 = test::p3.parse(cstring_buffer("111"));
+    auto result3 = test::p4.parse(cstring_buffer("111"));
     REQUIRE(result3.has_value());
     REQUIRE(result3.value() == 3);
 
-    auto result4 = test::p3.parse(cstring_buffer(""));
+    auto result4 = test::p4.parse(cstring_buffer(""));
     REQUIRE(result4.has_value());
     REQUIRE(result4.value() == 0);
 }
