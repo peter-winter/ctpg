@@ -20,7 +20,7 @@ jobs:
     
     - name: Configure CMake
       run: |
-        echo ${{env:VCPKG_INSTALLATION_ROOT}}
+        echo "${env:VCPKG_INSTALLATION_ROOT}"
         
       #run: cmake -B ${{github.workspace}}\build -DCMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}\scripts\buildsystems\vcpkg.cmake
 
