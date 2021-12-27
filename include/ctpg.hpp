@@ -333,8 +333,8 @@ namespace stdex
 
     private:
         T data[N];
-        std::size_t end;
         std::size_t start;
+        std::size_t end;
         std::size_t size_;
     };
 
@@ -1800,8 +1800,6 @@ public:
     template<typename Buffer, typename ErrorStream>
     constexpr std::optional<root_value_type> parse(parse_options options, const Buffer& buffer, ErrorStream& error_stream) const
     {
-        using iterator = buffers::iterator_t<Buffer>;
-
         detail::parser_value_stack_type_t<Buffer, empty_rules_count, value_variant_type> value_stack{};
         detail::parse_table_cursor_stack_type_t<Buffer, empty_rules_count> cursor_stack{};
 
@@ -2828,7 +2826,7 @@ constexpr auto rules(Rules&&... rules)
 struct skip
 {
     template<typename T>
-    constexpr skip(T&&) {};
+    constexpr skip(T&&) {}
 };
 
 namespace regex
@@ -2841,14 +2839,14 @@ namespace regex
             //0              1             2 3 4 5 6 7 8 9
             //regex_digit_09 regex_primary * + ? | ( ) { }
 
-            specials['*'] = 2;
-            specials['+'] = 3;
-            specials['?'] = 4;
-            specials['|'] = 5;
-            specials['('] = 6;
-            specials[')'] = 7;
-            specials['{'] = 8;
-            specials['}'] = 9;
+            specials[utils::char_to_idx('*')] = 2;
+            specials[utils::char_to_idx('+')] = 3;
+            specials[utils::char_to_idx('?')] = 4;
+            specials[utils::char_to_idx('|')] = 5;
+            specials[utils::char_to_idx('(')] = 6;
+            specials[utils::char_to_idx(')')] = 7;
+            specials[utils::char_to_idx('{')] = 8;
+            specials[utils::char_to_idx('}')] = 9;
         }
 
         template<typename Iterator, typename ErrorStream>
@@ -2867,8 +2865,8 @@ namespace regex
             auto res = [&](size16_t idx, size_t len)
             { return recognized(idx, len, options, sp, start, error_stream); };
 
-            if (specials[c] != 0)
-                return res(specials[c], 1);
+            if (specials[utils::char_to_idx(c)] != 0)
+                return res(specials[utils::char_to_idx(c)], 1);
 
             if (utils::is_dec_digit(c))
                 return res(0, 1);
