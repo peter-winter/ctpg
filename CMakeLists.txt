@@ -28,7 +28,9 @@ find_package(Catch2 REQUIRED)
 
 add_executable(testbin
     tests/main.cpp
-    tests/regex_tests.cpp
+    tests/regex_tests_1.cpp
+    tests/regex_tests_2.cpp
+    tests/regex_tests_3.cpp
     tests/simple_cases.cpp
     tests/simple_grammar.cpp
     tests/empty_symbols.cpp
