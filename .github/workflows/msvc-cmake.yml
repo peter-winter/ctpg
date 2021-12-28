@@ -2,9 +2,9 @@ name: Windows Build
 
 on:
   push:
-    branches: [ msvc-action ]
+    branches: [ master ]
   pull_request:
-    branches: [ msvc-action ]
+    branches: [ master ]
 
 jobs:
   build:
