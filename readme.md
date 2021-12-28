@@ -10,6 +10,7 @@ All it needs is a C++17 compiler!
 
 ### Contents
 * [Instalation](#instalation)
+* [Compiler support](#compiler-support)
 * [Usage](#usage)
 * [Explanation](#explanation)
     * [Header](#header)
@@ -58,6 +59,14 @@ make install    #needs appropriate permissions (root)
 ```
 
 This option allows integrating CTPG into dependent cmake projects.
+
+## Compiler support
+   
+Tested on:
+
+- GCC 10.3, 11.x
+- Clang 12.x, 13.x
+- MSVC 19.30
 
 ## Usage
 Following code demonstrates a simple parser which takes a comma separated list of integer numbers as argument and prints a sum of them.
