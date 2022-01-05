@@ -9,7 +9,7 @@ What's more, the generated parser is actually itself capable of parsing in compi
 All it needs is a C++17 compiler!
 
 ### Contents
-* [Instalation](#instalation)
+* [Installation](#Installation)
 * [Compiler support](#compiler-support)
 * [Usage](#usage)
 * [Explanation](#explanation)
@@ -37,7 +37,7 @@ All it needs is a C++17 compiler!
 * [Regular expressions](#regular-expressions)
 * [Diagnostics](#diagnostics)
 
-## Instalation
+## Installation
 
 ### Option 1.
 
