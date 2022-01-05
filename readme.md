@@ -9,7 +9,7 @@ What's more, the generated parser is actually itself capable of parsing in compi
 All it needs is a C++17 compiler!
 
 ### Contents
-* [Instalation](#instalation)
+* [Installation](#Installation)
 * [Compiler support](#compiler-support)
 * [Usage](#usage)
 * [Explanation](#explanation)
@@ -37,7 +37,7 @@ All it needs is a C++17 compiler!
 * [Regular expressions](#regular-expressions)
 * [Diagnostics](#diagnostics)
 
-## Instalation
+## Installation
 
 ### Option 1.
 
@@ -59,6 +59,20 @@ make install    #needs appropriate permissions (root)
 ```
 
 This option allows integrating CTPG into dependent cmake projects.
+
+### Option 3.
+
+The `ctpg-git` AUR package is available for Arch-based distribution users.
+
+- Manual install:
+
+```sh
+git clone https://aur.archlinux.org/ctpg-git.git
+cd ctpg-git
+makepkg -si
+```
+
+- Using yay: `yay -S ctpg-git`
 
 ## Compiler support
    
