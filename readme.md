@@ -60,6 +60,20 @@ make install    #needs appropriate permissions (root)
 
 This option allows integrating CTPG into dependent cmake projects.
 
+### Option 3.
+
+The `ctpg-git` AUR package is available for Arch-based distribution users.
+
+- Manual install:
+
+```sh
+git clone https://aur.archlinux.org/ctpg-git.git
+cd ctpg-git
+makepkg -si
+```
+
+- Using yay: `yay -S ctpg-git`
+
 ## Compiler support
    
 Tested on:
