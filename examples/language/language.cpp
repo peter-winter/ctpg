@@ -4,7 +4,7 @@ abstract syntax tree builder.
 
 Look at the CMakeLists.txt to see how to integrate CTPG into your CMake projects
 
-Build in a separate build direcotry:
+Build in a separate build directory:
 mkdir build
 cd build
 cmake ..
@@ -17,9 +17,7 @@ Run (in this directory):
 When no input string as an argument is provided program prints a parser diagnostic message.
 */
 
-// The header file normally sits in its own directory, somewhere like: /usr/local/include/ctpg/ctpg.hpp
-// but this time CMake dealt with it so there is no need for #include <ctpg/ctpg.hpp>
-#include <ctpg.hpp>
+#include <ctpg/ctpg.hpp>
 
 #include "ast_builder.hpp"
 

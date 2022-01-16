@@ -20,6 +20,9 @@ jobs:
             compiler: g++-10
           - cxx: clang++-12
             compiler: clang++-12
+    env:
+      CXX: ${{matrix.cxx}}
+      CMAKE_PREFIX_PATH: ${{github.workspace}}/.local
     steps:
     - uses: actions/checkout@v2
 
@@ -29,18 +32,23 @@ jobs:
     - name: Install catch2
       run: |
         git clone --branch v2.x https://github.com/catchorg/Catch2
-        cd Catch2
-        cmake -Bbuild -H. -DBUILD_TESTING=OFF
-        sudo cmake --build build/ --target install
+        cmake -S Catch2 -B Catch2/build -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$CMAKE_PREFIX_PATH
+        cmake --build Catch2/build --target install
        
     - name: Configure CMake
-      env:
-          CXX: ${{matrix.cxx}}
-      run: cmake -B ${{github.workspace}}/build
+      run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
     - name: Build
-      run: cmake --build ${{github.workspace}}/build
+      run: cmake --build build
 
     - name: Test
-      working-directory: ${{github.workspace}}/build
-      run: ctest
+      run: cmake --build build --target test
+
+    - name: Install
+      run: cmake --install build --prefix $CMAKE_PREFIX_PATH
+
+    - name: Configure CMake for examples
+      run: cmake -S examples -B examples/build -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build examples
+      run: cmake --build examples/build
