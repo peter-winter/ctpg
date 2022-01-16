@@ -67,3 +67,24 @@ TEST_CASE("emplace back", "[list helpers]")
     REQUIRE(result.has_value());
     REQUIRE(result.value().size() == 4);
 }
+
+namespace test {
+    constexpr parser p3(
+        c_root,
+        terms('*', ','),
+        nterms(c_root, ct),
+        rules(
+            c_root(ct) >= construct<std::vector<copyable_thing>, 1>{},
+            c_root(c_root, ',', ct) >= push_back<1, 3>{},
+            ct('*') >= create<copyable_thing>{}
+        )
+    );
+}
+
+TEST_CASE("construct", "[list helpers]")
+{
+    auto result = test::p3.parse(cstring_buffer("*,*,*,*"));
+
+    REQUIRE(result.has_value());
+    REQUIRE(result.value().size() == 4);
+}
