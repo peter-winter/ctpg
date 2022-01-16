@@ -1486,7 +1486,7 @@ namespace regex
     template<size_t N, typename Stream, typename StrTable>
     constexpr void write_dfa_diag_str(const dfa<N>& sm, Stream& stream, const StrTable& term_names)
     {
-        for (size_t i = 0; i < sm.size(); ++i)
+        for (size16_t i = 0; i < sm.size(); ++i)
             write_dfa_state_diag_str(sm[i], stream, i, term_names);
     }
 
@@ -2444,7 +2444,7 @@ private:
     {
         s << "STATE " << idx << "\n";
 
-        for (size_t i = 0u; i < situation_address_space_size; ++i)
+        for (size32_t i = 0u; i < situation_address_space_size; ++i)
         {
             if (states[idx].test(i))
             {

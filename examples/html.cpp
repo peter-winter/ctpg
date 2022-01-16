@@ -14,7 +14,7 @@ using namespace ctpg;
 using namespace ctpg::ftors;
 using namespace ctpg::buffers;
 
-struct html_block;
+class html_block;
 using list_type = std::vector<html_block>;
 
 class html_block
