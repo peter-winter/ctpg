@@ -58,11 +58,11 @@ constexpr custom_term comma(",", create<no_type>{} );
 
 constexpr parser p(
     list,
-    terms(',', number),
+    terms(comma, number),
     nterms(list),
     rules(
         list(number),
-        list(list, ',', number)
+        list(list, comma, number)
             >= [](int sum, skip, int x){ return sum + x; }
     ),
     use_lexer<int_lexer>{}
