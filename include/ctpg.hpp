@@ -992,9 +992,11 @@ struct parse_options
 {
     constexpr parse_options& set_verbose(bool val = true) { verbose = val; return *this; }
     constexpr parse_options& set_skip_whitespace(bool val = true) { skip_whitespace = val; return *this; }
+    constexpr parse_options& set_skip_newline(bool val = true) { skip_newline = val; return *this; }
 
     bool verbose = false;
     bool skip_whitespace = true;
+    bool skip_newline = true;
 };
 
 struct match_options
@@ -2746,7 +2748,12 @@ private:
     template<typename ParseState>
     constexpr auto skip_whitespace(ParseState& ps) const
     {
-        constexpr char space_chars[] = { 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0x00 };
+        constexpr char space_chars_newline[] = { 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0x00 };
+        constexpr char space_chars_no_newline[] = { 0x09, 0x0b, 0x0c, 0x0d, 0x20, 0x00 };
+
+        const auto space_chars = ps.options.skip_newline
+                                     ? space_chars_newline
+                                     : space_chars_no_newline;
 
         auto start = ps.current_it;
         while (true)
