@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.14)
 project(
     "ctpg"
     VERSION 1.3.6
@@ -83,26 +83,6 @@ install(
     INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
 )
 
-# Allow CTPG to be found on 32-bit systems, even if it
-# was "built" on a 64-bit system, and vice-versa.
-if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.14)
-    set(arch_opts ARCH_INDEPENDENT)
-else ()
-    set(arch_opts "")
-endif ()
-
-write_basic_package_version_file(
-    "ctpg-config-version.cmake"
-    COMPATIBILITY SameMajorVersion
-    ${arch_opts}
-)
-
-configure_package_config_file(
-    "${PROJECT_SOURCE_DIR}/cmake/ctpg-config.cmake.in"
-    "${PROJECT_BINARY_DIR}/ctpg-config.cmake"
-    INSTALL_DESTINATION "${CTPG_INSTALL_CMAKEDIR}"
-)
-
 install(
     EXPORT ctpg-targets
     DESTINATION "${CTPG_INSTALL_CMAKEDIR}"
@@ -112,14 +92,26 @@ install(
 )
 
 install(
-    FILES "${PROJECT_BINARY_DIR}/ctpg-config.cmake"
-          "${PROJECT_BINARY_DIR}/ctpg-config-version.cmake"
-    DESTINATION "${CTPG_INSTALL_CMAKEDIR}"
+    DIRECTORY "${PROJECT_SOURCE_DIR}/include/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
     COMPONENT ctpg
 )
 
+configure_package_config_file(
+    "${PROJECT_SOURCE_DIR}/cmake/ctpg-config.cmake.in"
+    "${PROJECT_BINARY_DIR}/ctpg-config.cmake"
+    INSTALL_DESTINATION "${CTPG_INSTALL_CMAKEDIR}"
+)
+
+write_basic_package_version_file(
+    "ctpg-config-version.cmake"
+    COMPATIBILITY SameMajorVersion
+    ARCH_INDEPENDENT
+)
+
 install(
-    DIRECTORY ${PROJECT_SOURCE_DIR}/include/
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    FILES "${PROJECT_BINARY_DIR}/ctpg-config.cmake"
+    "${PROJECT_BINARY_DIR}/ctpg-config-version.cmake"
+    DESTINATION "${CTPG_INSTALL_CMAKEDIR}"
     COMPONENT ctpg
 )
