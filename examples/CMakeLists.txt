@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project(ctpg-examples LANGUAGES CXX)
 
+option(CTPG_WARNING_FLAGS "When ON, enable all warnings and promote warnings to errors." ON)
+
 find_package(ctpg 1 REQUIRED)
 
 set(examples
@@ -19,4 +21,11 @@ set(examples
 foreach (example IN LISTS examples)
     add_executable(${example} ${example}.cpp)
     target_link_libraries(${example} PRIVATE ctpg::ctpg)
+    if (CTPG_WARNING_FLAGS)
+        if (MSVC)
+            target_compile_options(${example} PRIVATE /W4 /WX)
+        else ()
+            target_compile_options(${example} PRIVATE -Wall -Wextra -pedantic -Werror)
+        endif ()
+    endif ()
 endforeach ()
