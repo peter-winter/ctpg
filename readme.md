@@ -885,6 +885,12 @@ The list of available parse options:
 
 By default parser skips the whitespace characters between the terms, this can be changed using this option.
 
+* set_skip_newline(bool value)
+
+If set_skip_whitespace is set to ```true```, this options allows to not skip newline (```\n```) characters. Value defaults to true.
+
+>Note: This option has no effect if skipping whitespaces is disabled.
+
 * set_verbose(bool value)
 
 Sets the parser to verbose mode. More on this in the [Verbose output](#verbose-output) section.
