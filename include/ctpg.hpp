@@ -561,6 +561,27 @@ namespace ftors
         }
     };
 
+    template<typename T, std::size_t FromIdx = 1, typename = std::make_index_sequence<FromIdx - 1>>
+    struct construct
+    {};
+
+    template<
+        typename T,
+        std::size_t FromIdx,
+        std::size_t... Skip
+    >
+    struct construct<
+        T,
+        FromIdx,
+        std::index_sequence<Skip...>>
+    {
+        template<typename Arg, typename... Rest>
+        constexpr auto operator()(ignore<Skip>..., Arg&& arg, Rest&&...) const
+        {
+            return T{std::forward<Arg>(arg)};
+        }
+    };
+
     template<
         std::size_t ContIdx = 1,
         std::size_t ArgIdx = 2,

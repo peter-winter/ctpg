@@ -732,6 +732,26 @@ constexpr parser p(
 );
 ```
 
+**construct**
+
+Use to construct an instance of a given type from an argument:
+
+```c++
+
+using namespace ctpg::ftors;
+
+constexpr parser p(
+    something,
+    terms(value),
+    nterms(something),
+    rules(
+        something(value)
+            >= construct<something_type, 1>{}   // 1 is the position of value in the rule, this constructs something_type{value}
+    )
+)
+
+```
+
 **element placeholders**
 
 Use whenever a rule simply passes nth element from the right side:
@@ -798,7 +818,7 @@ denoting element numbers for the list and the value to append.
 So in case of comma separeted numbers, we can simply use:
 ```c++
 rules(
-    list() >= create<std::vector<int>>{},
+    list(number) >= construct<std::vector<int>, 1>{},
     list(list, ',', number) >= push_back<1, 3>{}  // 1 is the list, 3 is the number
 )
 ```
