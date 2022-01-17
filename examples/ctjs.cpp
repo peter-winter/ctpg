@@ -233,11 +233,11 @@ namespace ctjs
                 js_value(js_string)
                     >= [&b](auto sv){ return b.add_new_chunk_and_increase(b.add_js_string(sv)); },
                 js_value("true")
-                    >= [&b](auto sv){ return b.add_new_chunk_and_increase(true); },
+                    >= [&b](auto){ return b.add_new_chunk_and_increase(true); },
                 js_value("false")
-                    >= [&b](auto sv){ return b.add_new_chunk_and_increase(false);},
+                    >= [&b](auto){ return b.add_new_chunk_and_increase(false);},
                 js_value("null")
-                    >= [&b](auto sv){ return b.add_new_chunk_and_increase(nullptr); },
+                    >= [&b](auto){ return b.add_new_chunk_and_increase(nullptr); },
                 js_value(js_array),
                 js_value(js_object),
                 js_array_start('[')
@@ -270,9 +270,10 @@ namespace ctjs
     class json_string
     {
     public:
-        constexpr json_string(std::string_view str)
+        constexpr json_string(std::string_view str):
+            len(str.size())
         {
-            for (auto i = 0u; i < str.size(); ++i)
+            for (auto i = 0u; i < len; ++i)
                 arr[i] = str.at(i);
         }
 
@@ -281,8 +282,14 @@ namespace ctjs
             return arr;
         }
 
+        constexpr size_t size() const
+        {
+            return len;
+        }
+
     private:
         char arr[N] = {};
+        size_t len;
     };
 
     template<idx_t N>
@@ -416,7 +423,7 @@ namespace ctjs
     };
 }
 
-int main(int argc, char* argv[])
+int main()
 {
     constexpr const char txt[] = R"({"a":[1,2,3], "a1":{}, "a2":[], "b":true, "c":false, "d":null, "e":"ala", "f":{"x":1.2}})";
     constexpr ctjs::json js(txt);
@@ -434,8 +441,10 @@ int main(int argc, char* argv[])
     static_assert(b && !c);
 
     constexpr auto d = js["d"].as_null();
+    static_assert(d == nullptr);
 
     constexpr auto e = js["e"].as_string();
+    static_assert(e.size() == 3);
 
     constexpr auto f = js["f"]["x"].as_number();
     static_assert(f == 1.2);
