@@ -9,6 +9,9 @@
 using namespace ctpg;
 using namespace ctpg::ftors;
 
+// Source: https://stackoverflow.com/a/22882666
+constexpr bool IsDigit(wchar_t c);
+
 class js_value_type;
 using js_array_type = std::vector<js_value_type>;
 using js_object_type = std::map<std::string, js_value_type>;
@@ -48,7 +51,8 @@ private:
     type data;
 };
 
-double to_js_number(std::string_view sv)
+// Tested: https://godbolt.org/z/7bo3d41K6
+constexpr double to_js_number(std::string_view sv)
 {
     auto it = sv.begin();
     auto end = sv.end();
@@ -85,7 +89,16 @@ double to_js_number(std::string_view sv)
     if (*it == 'e' || *it == 'E')
     {
         ++it;
-        exp_minus = *it++ == '-';
+
+        if(IsDigit(*it))
+        {
+            exp_minus = false;
+        }
+        else
+        {
+            exp_minus = *it++ == '-';
+        }
+
         exp = get_int(it, '\0', '\0', '\0', '\0');
     }
 
@@ -274,6 +287,32 @@ constexpr parser js_parser(
             >= [](auto k, skip, auto&& v) { return to_object_element(k, std::move(v)); }
     )
 );
+
+constexpr bool IsDigit(wchar_t c)
+{
+  return (c >= L'0' && c <= L'9') ||
+         (c >= L'\u0660' && c <= L'\u0669') ||  // Arabic-Indic
+         (c >= L'\u06F0' && c <= L'\u06F9') ||  // Extended Arabic-Indic
+         (c >= L'\u07C0' && c <= L'\u07C9') ||  // NKO
+         (c >= L'\u0966' && c <= L'\u096F') ||  // Devanagari
+         (c >= L'\u09E6' && c <= L'\u09EF') ||  // Bengali
+         (c >= L'\u0A66' && c <= L'\u0A6F') ||  // Gurmukhi
+         (c >= L'\u0AE6' && c <= L'\u0AEF') ||  // Gujarati
+         (c >= L'\u0B66' && c <= L'\u0B6F') ||  // Oriya
+         (c >= L'\u0BE6' && c <= L'\u0BEF') ||  // Tamil
+         (c >= L'\u0C66' && c <= L'\u0C6F') ||  // Telugu
+         (c >= L'\u0CE6' && c <= L'\u0CEF') ||  // Kannada
+         (c >= L'\u0D66' && c <= L'\u0D6F') ||  // Malayalam
+         (c >= L'\u0E50' && c <= L'\u0E59') ||  // Thai
+         (c >= L'\u0ED0' && c <= L'\u0ED9') ||  // Lao
+         (c >= L'\u0F20' && c <= L'\u0F29');    // Tibetan
+
+  // Missing check for Myanmar, Khmer, Mongolian, Limbu, New Tai Lue,
+  // Tai Tham Hora, Tai Tham Tham, Balinese, Sundanese, Lepcha, Ol Chiki,
+  // Vai, Surashtra, Kayah, Javanese, Cham, Meetei Mayek, Osmanya, Brahmi,
+  // Sora, Chakma, Sharada, Takri, Mathematical.
+  // For codes see http://www.unicode.org/ucd/
+}
 
 int main(int argc, char* argv[])
 {
