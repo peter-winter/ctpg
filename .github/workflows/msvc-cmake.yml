@@ -9,7 +9,8 @@ on:
 jobs:
   build:
     runs-on: windows-2022
-
+    env:
+      CMAKE_PREFIX_PATH: ${{ github.workspace }}\.local
     steps:
     - uses: actions/checkout@v2
 
@@ -17,19 +18,23 @@ jobs:
       run: |
         vcpkg integrate install
         vcpkg install catch2:x64-windows
-    
-    - name: Configure CMake Toolchain
-      run: echo ("CMAKE_TOOLCHAIN_ARG=-DCMAKE_TOOLCHAIN_FILE=" + ${env:VCPKG_INSTALLATION_ROOT} + "\scripts\buildsystems\vcpkg.cmake") >> $env:GITHUB_ENV
-    
+
     - name: Configure CMake
-      run: |
-        echo "${{ env.CMAKE_TOOLCHAIN_ARG }}"
-        cmake -B ${{github.workspace}}\build "${{ env.CMAKE_TOOLCHAIN_ARG }}"
+      run: cmake -S . -B build "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake"
         
     - name: Build
-      run: cmake --build ${{github.workspace}}\build
+      run: cmake --build build --config Release
 
     - name: Test
-      working-directory: ${{github.workspace}}\build
-      run: ctest
-      
+      run: |
+        cd build
+        ctest -C Release
+
+    - name: Install
+      run: cmake --install build --config Release --prefix "$env:CMAKE_PREFIX_PATH"
+
+    - name: Configure CMake for examples
+      run: cmake -S examples -B examples\build
+
+    - name: Build examples
+      run: cmake --build examples\build --config Release

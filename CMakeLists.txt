@@ -1,33 +1,43 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.14)
+project(
+    "ctpg"
+    VERSION 1.3.6
+    DESCRIPTION "Compile Time Parser Generator. A single header library turning c++ code into LR(1) parser with finite state machine lexer in compile time."
+    HOMEPAGE_URL "https://github.com/peter-winter/ctpg"
+    LANGUAGES CXX
+)
 
-project("ctpg" VERSION 1.3.4
-     DESCRIPTION "Compile Time Parser Generator. A single header library turning c++ code into LR(1) parser with finite state machine lexer in compile time."
-     HOMEPAGE_URL "https://github.com/peter-winter/ctpg")
+# CMake module dependencies
 
+include(CMakePackageConfigHelpers)
+include(CTest)
 include(GNUInstallDirs)
 
-if (MSVC)
-    add_compile_options(/W4 /WX)
-else()
-    add_compile_options(-Wall -Wextra -pedantic -Werror)
-endif()
+# CTPG specific options
 
+string(COMPARE EQUAL "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" is_top_level)
 
-add_library(${PROJECT_NAME} INTERFACE)
+option(CTPG_ENABLE_INSTALL "Include project-specific install rules" "${is_top_level}")
+option(CTPG_ENABLE_TESTS "Build test binaries" "${BUILD_TESTING}")
 
-target_include_directories(
-  ${PROJECT_NAME}
-  INTERFACE
-  $<BUILD_INTERFACE:${${PROJECT_NAME}_SOURCE_DIR}>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+if (NOT DEFINED CTPG_INSTALL_CMAKEDIR)
+    set(CTPG_INSTALL_CMAKEDIR "${CMAKE_INSTALL_DATAROOTDIR}/ctpg/cmake"
+        CACHE STRING "Install path for ctpg CMake files")
+endif ()
 
-target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_17)
+option(CTPG_WARNING_FLAGS "When ON, enable all warnings and promote warnings to errors." "${is_top_level}")
+
+# CTPG header-only library
+
+add_library(ctpg INTERFACE)
+add_library(ctpg::ctpg ALIAS ctpg)
+target_include_directories(ctpg INTERFACE "$<BUILD_INTERFACE:${ctpg_SOURCE_DIR}/include>")
+target_compile_features(ctpg INTERFACE cxx_std_17)
 
 # Test
-option(CTPG_ENABLE_TESTS "Build test binaries" ON)
 
-if(CTPG_ENABLE_TESTS)
-    find_package(Catch2 REQUIRED)
+if (CTPG_ENABLE_TESTS)
+    find_package(Catch2 2 REQUIRED)
 
     add_executable(testbin
         tests/main.cpp
@@ -48,45 +58,60 @@ if(CTPG_ENABLE_TESTS)
         tests/buffers.cpp
     )
 
-    target_link_libraries(testbin Catch2::Catch2)
-    target_include_directories(testbin PRIVATE ${PROJECT_SOURCE_DIR}/include)
-    target_compile_features(testbin PUBLIC cxx_std_17)
+    target_link_libraries(testbin PRIVATE Catch2::Catch2 ctpg::ctpg)
+    if (CTPG_WARNING_FLAGS)
+        if (MSVC)
+            target_compile_options(testbin PRIVATE /W4 /WX)
+        else ()
+            target_compile_options(testbin PRIVATE -Wall -Wextra -pedantic -Werror)
+        endif ()
+    endif ()
 
-    include(CTest)
     include(Catch)
     catch_discover_tests(testbin)
-    enable_testing()
-endif(CTPG_ENABLE_TESTS)
+endif ()
 
 # Install
-install(TARGETS ${PROJECT_NAME}
-        EXPORT ${PROJECT_NAME}_Targets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-include(CMakePackageConfigHelpers)
+if (NOT CTPG_ENABLE_INSTALL)
+    return()
+endif ()
 
-write_basic_package_version_file("${PROJECT_NAME}ConfigVersion.cmake"
-                                 VERSION ${PROJECT_VERSION}
-                                 COMPATIBILITY SameMajorVersion)
-if(NOT INCLUDE_INSTALL_DIR)
-  set(INCLUDE_INSTALL_DIR include/${PROJECT_NAME})
-endif()
+install(
+    TARGETS ctpg
+    EXPORT ctpg-targets
+    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+)
+
+install(
+    EXPORT ctpg-targets
+    DESTINATION "${CTPG_INSTALL_CMAKEDIR}"
+    NAMESPACE ctpg::
+    FILE ctpg-targets.cmake
+    COMPONENT ctpg
+)
+
+install(
+    DIRECTORY "${PROJECT_SOURCE_DIR}/include/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    COMPONENT ctpg
+)
 
 configure_package_config_file(
-  "${PROJECT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
-  "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-  INSTALL_DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake
-  PATH_VARS INCLUDE_INSTALL_DIR)
+    "${PROJECT_SOURCE_DIR}/cmake/ctpg-config.cmake.in"
+    "${PROJECT_BINARY_DIR}/ctpg-config.cmake"
+    INSTALL_DESTINATION "${CTPG_INSTALL_CMAKEDIR}"
+)
 
-install(EXPORT ${PROJECT_NAME}_Targets
-        FILE ${PROJECT_NAME}Targets.cmake
-        NAMESPACE ${PROJECT_NAME}::
-        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake)
+write_basic_package_version_file(
+    "ctpg-config-version.cmake"
+    COMPATIBILITY SameMajorVersion
+    ARCH_INDEPENDENT
+)
 
-install(FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-              "${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
-        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake)
-
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME})
+install(
+    FILES "${PROJECT_BINARY_DIR}/ctpg-config.cmake"
+    "${PROJECT_BINARY_DIR}/ctpg-config-version.cmake"
+    DESTINATION "${CTPG_INSTALL_CMAKEDIR}"
+    COMPONENT ctpg
+)

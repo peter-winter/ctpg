@@ -41,24 +41,22 @@ All it needs is a C++17 compiler!
 
 ### Option 1.
 
-It is a single header library. You can just copy the *include/ctpg.hpp* header wherever you want.
+It is a single header library. You can just copy the *include/ctpg/ctpg.hpp* header wherever you want.
 
 ### Option 2.
 
-Use *cmake* to build the library:
+Use *CMake 3.14+* to build the library:
 
 ```
-git clone https://github.com/peter-winter/ctpg
-cd ctpg
-mkdir build
-cd build
-cmake ..
-make
-make test       #optionally
-make install    #needs appropriate permissions (root)
+$ git clone https://github.com/peter-winter/ctpg
+$ cmake -S ctpg -B ctpg/build -DCMAKE_BUILD_TYPE=Release
+$ cmake --build ctpg/build
+$ (cd ctpg/build ; ctest)  # optional
+$ cmake --install ctpg/build [--prefix /usr/local] 
 ```
 
-This option allows integrating CTPG into dependent cmake projects.
+CTPG can be used via the standard `find_package` interface. Just link to `ctpg::ctpg`!
+There is a minimal, self-contained example in [examples/language/CMakeLists.txt](examples/language/CMakeLists.txt).
 
 ### Option 3.
 
@@ -150,7 +148,7 @@ you should see:
 
 ### Header
 ```c++
-#include "ctpg.hpp"
+#include <ctpg/ctpg.hpp>
 ```
 
 ### Namespaces

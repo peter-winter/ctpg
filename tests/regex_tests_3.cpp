@@ -1,5 +1,5 @@
 #include <catch2/catch.hpp>
-#include <ctpg.hpp>
+#include <ctpg/ctpg.hpp>
 
 namespace test
 {
