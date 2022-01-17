@@ -23,7 +23,12 @@ foreach (example IN LISTS examples)
     target_link_libraries(${example} PRIVATE ctpg::ctpg)
     if (CTPG_WARNING_FLAGS)
         if (MSVC)
-            target_compile_options(${example} PRIVATE /W4 /WX)
+            target_compile_options(
+                ${example}
+                PRIVATE
+                /W4 /WX
+                /wd4459  # declaration of 'identifier' hides global declaration
+            )
         else ()
             target_compile_options(${example} PRIVATE -Wall -Wextra -pedantic -Werror)
         endif ()
