@@ -56,6 +56,7 @@ if (CTPG_ENABLE_TESTS)
         tests/source_tracking.cpp
         tests/error_recovery.cpp
         tests/buffers.cpp
+        tests/contexts.cpp
     )
 
     target_link_libraries(testbin PRIVATE Catch2::Catch2 ctpg::ctpg)

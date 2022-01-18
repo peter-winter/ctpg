@@ -27,6 +27,7 @@ All it needs is a C++17 compiler!
 * [Functors - advanced](#functors---advanced)
    * [Functor helpers](#functor-helpers)
    * [Default functors](#default-functors)
+* [External context](#external-context)
 * [Various features](#various-features)
    * [Parse options](#parse-options)
    * [Verbose output](#verbose-output)   
@@ -859,6 +860,100 @@ constexpr parser p(
             // skip functor entirely, url_type move constructible from right side value types
     )
 );
+```
+
+## External context
+
+Sometimes it is useful to access some part of program's dynamic data during parsing.
+For example, if one wants to parse and evaluate expression ```a + b``` knowing that ```a = 1``` and ```b = 2``` then one of the most intuitive ideas is to pass this mapping of variables directly into the variable-handling functor which should take variable's name and return its value extracted from the mapping.
+
+This idea can be implemented using operator ```>>=``` instead of ```>=``` and invoking ```context_parse``` instead of ```parse```: 
+
+``` c++
+constexpr char_term o_plus('+', 1, associativity::ltor);
+
+constexpr char variable_pattern[] = "[_a-zA-Z][_a-zA-Z0-9]*";
+constexpr regex_term<variable_pattern> variable("variable");
+
+constexpr parser p(
+    expr,
+    terms(variable, o_plus),
+    nterms(expr),
+    rules(
+        expr(expr, o_plus, expr) >= [](auto l, auto, auto r) { return l + r; },
+        expr(variable) >>= [](const auto &ctx, auto v) { return ctx.at(v); }
+    )
+);
+
+...
+
+const std::unordered_map<std::string_view, int> context({{"a", 1}, {"b", 2}});
+auto res = p.context_parse(context, cstring_buffer("a + b"));
+```
+
+```>>=``` indicates that the functor accepts the context object as its first argument.
+And `context_parse` works just like ```parse``` and can accept all the same arguments but it also accepts the context object as its first argument and then redirects it to functors.
+Note that ```>=``` can still be used, parser just doesn't pass the context to functors defined using this operator.
+
+Moreover, context object can be passed by non-const reference that allows functors to modify the context:
+
+``` c++
+expr(...) >>= [](auto &ctx, ...) { /* modify ctx */; ... }
+
+...
+
+Context context;
+auto res = p.context_parse(context, ...);
+```
+
+Contexts can be used even in compile-time parsing as long as the context object can be constructed in compile time and all referenced methods are constexpr:
+
+``` c++
+constexpr parser p(
+    expr,
+    terms(variable, o_plus),
+    nterms(expr),
+    rules(
+        expr(expr, o_plus, expr) >= [](auto l, auto, auto r) { return l + r; },
+        expr(variable) >>= [](const auto &ctx, auto v)
+        {
+            if (v.get_value() == "a")
+                return ctx.a;
+            if (v.get_value() == "b")
+                return ctx.b;
+            return 0;
+        }
+    )
+);
+
+...
+
+struct variables {
+    int a;
+    int b;
+};
+
+constexpr auto res = p.context_parse(variables{1, 2}, cstring_buffer("a + b"));
+```
+
+Note that in all the examples above the context type is specified after the parser is already defined. It is possible because context type substitution is performed inside ```context_parse``` and not inside the parser object constructor. It also allows one to use one parser with different contexts as long as types of these contexts can be safely substituted into functors:
+
+``` c++
+// p is the parser from the previous example.
+
+struct variables {
+    int a;
+    int b;
+};
+
+struct more_variables {
+    int a;
+    int b;
+    int c;
+};
+
+constexpr auto res1 = p.context_parse(variables{1, 2}, cstring_buffer("a + b"));
+constexpr auto res2 = p.context_parse(more_variables{1, 2, 3}, cstring_buffer("a + b"));
 ```
 
 ## Various features

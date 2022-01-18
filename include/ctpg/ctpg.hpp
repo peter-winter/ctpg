@@ -1557,7 +1557,7 @@ namespace detail
         constexpr static const char* get_name() { return "<eof>"; }
     };
 
-    template<typename F, typename L, typename...R>
+    template<bool RequiresContext, typename F, typename L, typename...R>
     class rule
     {
     public:
@@ -1580,13 +1580,19 @@ namespace detail
 
         constexpr auto operator[](int prec)
         {
-            return rule<F, L, R...>(std::move(f), l, r, prec);
+            return rule<RequiresContext, F, L, R...>(std::move(f), l, r, prec);
         }
 
         template<typename F1>
         constexpr auto operator >= (F1&& f)
         {
-            return rule<std::decay_t<F1>, L, R...>(std::move(f), l, r, precedence);
+            return rule<false, std::decay_t<F1>, L, R...>(std::move(f), l, r, precedence);
+        }
+
+        template<typename F1>
+        constexpr auto operator >>= (F1&& f)
+        {
+            return rule<true, std::decay_t<F1>, L, R...>(std::move(f), l, r, precedence);
         }
 
         constexpr const F& get_f() const { return f; }
@@ -1602,7 +1608,7 @@ namespace detail
     };
 
     template<typename L, typename... R>
-    rule(L l, std::tuple<R...> r) -> rule<std::nullptr_t, L, R...>;
+    rule(L l, std::tuple<R...> r) -> rule<false, std::nullptr_t, L, R...>;
 
     template<typename Arg>
     constexpr auto make_rule_item(Arg&& arg)
@@ -1638,7 +1644,60 @@ namespace detail
     constexpr size_t value_stack_initial_capacity = 1 << 10;
     constexpr size_t cursor_stack_initial_capacity = 1 << 10;
 
-    template<typename CursorStack, typename ValueStack, typename ErrorStream, typename Iterator>
+    template<typename Context, typename ValueVariantType, typename RuleTupleType, size_t RuleCount>
+    struct value_reductors
+    {
+        constexpr value_reductors(const RuleTupleType& rule_tuple): rule_tuple(rule_tuple) {
+            init_reductors(rule_tuple, std::make_index_sequence<std::tuple_size_v<RuleTupleType>>{});
+        }
+
+        constexpr ValueVariantType invoke(Context&& context, size_t i, ValueVariantType* args) const {
+            return reductors[i](std::forward<Context>(context), rule_tuple, args);
+        }
+
+    private:
+        template<size_t... I>
+        constexpr void init_reductors(const RuleTupleType& rule_tuple, std::index_sequence<I...>)
+        {
+            (void(init_nth_reductor<I>(std::get<I>(rule_tuple))), ...);
+        }
+
+        template<size_t Nr, bool RequiresContext, typename F, typename L, typename... R>
+        constexpr void init_nth_reductor(const detail::rule<RequiresContext, F, L, R...>&)
+        {
+            reductors[Nr] = &reduce_value<Nr, RequiresContext, F, value_type_t<L>, value_type_t<R>...>;
+        }
+
+        template<bool RequiresContext, typename F, typename LValueType, typename... RValueType, size_t... I>
+        constexpr static LValueType reduce_value_impl([[maybe_unused]] Context&& ctx, [[maybe_unused]] const F& f, ValueVariantType* start, std::index_sequence<I...>)
+        {
+            if constexpr (std::is_same_v<F, std::nullptr_t>)
+                return LValueType(std::get<RValueType>(std::move(*(start + I)))...);
+            else
+            {
+                if constexpr (RequiresContext)
+                    return LValueType(f(std::forward<Context>(ctx), std::get<RValueType>(std::move(*(start + I)))...));
+                else
+                    return LValueType(f(std::get<RValueType>(std::move(*(start + I)))...));
+            }
+        }
+
+        template<size_t RuleIdx, bool RequiresContext, typename F, typename LValueType, typename... RValueType>
+        constexpr static ValueVariantType reduce_value(Context&& ctx, const RuleTupleType& rules, ValueVariantType* start)
+        {
+            return ValueVariantType(
+                reduce_value_impl<RequiresContext, F, LValueType, RValueType...>(
+                    std::forward<Context>(ctx), std::get<RuleIdx>(rules).get_f(), start, std::index_sequence_for<RValueType...>{})
+            );
+        }
+
+        const RuleTupleType& rule_tuple;
+
+        using value_reductor = ValueVariantType(*)(Context&&, const RuleTupleType&, ValueVariantType*);
+        value_reductor reductors[RuleCount] = {};
+    };
+
+    template<typename CursorStack, typename ValueStack, typename ErrorStream, typename Iterator, typename ValueReductors>
     struct parse_state
     {
         constexpr parse_state(
@@ -1647,7 +1706,8 @@ namespace detail
             ErrorStream& error_stream,
             parse_options options,
             Iterator buffer_begin,
-            Iterator buffer_end):
+            Iterator buffer_end,
+            const ValueReductors& reductors):
             cursor_stack(cursor_stack),
             value_stack(value_stack),
             error_stream(error_stream),
@@ -1656,6 +1716,7 @@ namespace detail
             current_it(buffer_begin),
             current_term_end_it(buffer_begin),
             buffer_end(buffer_end),
+            reductors(reductors),
             current_term_idx(uninitialized16),
             recovery_mode(false),
             consume_mode(false)
@@ -1681,6 +1742,7 @@ namespace detail
         iterator current_it;
         iterator current_term_end_it;
         iterator buffer_end;
+        const ValueReductors& reductors;
         size16_t current_term_idx;
         bool recovery_mode;
         bool consume_mode;
@@ -1811,7 +1873,14 @@ public:
     constexpr std::optional<root_value_type> parse(const Buffer& buffer) const
     {
         detail::no_stream error_stream;
-        return parse(parse_options{}, buffer, error_stream);
+        return parse(buffer, error_stream);
+    }
+
+    template<typename Context, typename Buffer>
+    constexpr std::optional<root_value_type> context_parse(Context&& ctx, const Buffer& buffer) const
+    {
+        detail::no_stream error_stream;
+        return context_parse(std::forward<Context>(ctx), buffer, error_stream);
     }
 
     template<typename Buffer, typename ErrorStream>
@@ -1820,13 +1889,26 @@ public:
         return parse(parse_options{}, buffer, error_stream);
     }
 
+    template<typename Context, typename Buffer, typename ErrorStream>
+    constexpr std::optional<root_value_type> context_parse(Context&& ctx, const Buffer& buffer, ErrorStream& error_stream) const
+    {
+        return context_parse(std::forward<Context>(ctx), parse_options{}, buffer, error_stream);
+    }
+
     template<typename Buffer, typename ErrorStream>
     constexpr std::optional<root_value_type> parse(parse_options options, const Buffer& buffer, ErrorStream& error_stream) const
+    {
+        return context_parse(no_type{}, options, buffer, error_stream);
+    }
+
+    template<typename Context, typename Buffer, typename ErrorStream>
+    constexpr std::optional<root_value_type> context_parse(Context&& ctx, parse_options options, const Buffer& buffer, ErrorStream& error_stream) const
     {
         detail::parser_value_stack_type_t<Buffer, empty_rules_count, value_variant_type> value_stack{};
         detail::parse_table_cursor_stack_type_t<Buffer, empty_rules_count> cursor_stack{};
 
-        detail::parse_state ps(cursor_stack, value_stack, error_stream, options, buffer.begin(), buffer.end());
+        detail::value_reductors<Context, value_variant_type, rule_tuple_type, rule_count> reductors(rule_tuple);
+        detail::parse_state ps(cursor_stack, value_stack, error_stream, options, buffer.begin(), buffer.end(), reductors);
 
         ps.cursor_stack.push_back(0);
 
@@ -1877,9 +1959,9 @@ public:
                 enter_consume_mode(ps);
             }
             else if (entry.kind == parse_table_entry_kind::reduce)
-                reduce(ps, entry.reduce);
+                reduce(std::forward<Context>(ctx), ps, entry.reduce);
             else if (entry.kind == parse_table_entry_kind::rr_conflict)
-                rr_conflict(ps, entry.reduce);
+                rr_conflict(std::forward<Context>(ctx), ps, entry.reduce);
             else if (entry.kind == parse_table_entry_kind::success)
             {
                 root_value = std::optional(std::move(success(ps)));
@@ -2132,8 +2214,8 @@ private:
         return associativity::no_assoc;
     }
 
-    template<size_t Nr, typename F, typename L, typename... R, size_t... I>
-    constexpr void analyze_rule(const detail::rule<F, L, R...>& r, std::index_sequence<I...>)
+    template<size_t Nr, bool RequiresContext, typename F, typename L, typename... R, size_t... I>
+    constexpr void analyze_rule(const detail::rule<RequiresContext, F, L, R...>& r, std::index_sequence<I...>)
     {
         size16_t l_idx = size16_t(utils::find_str(nterm_names, r.get_l().get_name()));
         (void(right_sides[Nr][I] = make_symbol(std::get<I>(r.get_r()))), ...);
@@ -2142,10 +2224,6 @@ private:
         rule_last_terms[Nr] = calculate_rule_last_term(Nr, rule_elements_count);
         rule_precedences[Nr] = calculate_rule_precedence(r.get_precedence(), Nr);
         rule_associativities[Nr] = calculate_rule_associativity(Nr);
-        if constexpr (Nr != root_rule_idx)
-        {
-            value_reductors[Nr] = &reduce_value<Nr, F, value_type_t<L>, value_type_t<R>...>;
-        }
     }
 
     struct state_analyze_info
@@ -2515,23 +2593,6 @@ private:
         return value_variant_type(term_value_type(t.get_ftor()(sv), sp));
     }
 
-    template<typename F, typename LValueType, typename... RValueType, size_t... I>
-    constexpr static LValueType reduce_value_impl(const F& f, value_variant_type* start, std::index_sequence<I...>)
-    {
-        if constexpr (std::is_same_v<F, std::nullptr_t>)
-            return LValueType(std::get<RValueType>(std::move(*(start + I)))...);
-        else
-            return LValueType(f(std::get<RValueType>(std::move(*(start + I)))...));
-    }
-
-    template<size_t RuleIdx, typename F, typename LValueType, typename... RValueType>
-    constexpr static value_variant_type reduce_value(const rule_tuple_type& rules, value_variant_type* start)
-    {
-        return value_variant_type(
-            reduce_value_impl<F, LValueType, RValueType...>(std::get<RuleIdx>(rules).get_f(), start, std::index_sequence_for<RValueType...>{})
-        );
-    }
-
     template<typename ParseState>
     constexpr void shift_recovery_token(ParseState& ps, size16_t new_cursor_value) const
     {
@@ -2553,8 +2614,8 @@ private:
         ps.value_stack.emplace_back(ftor(term_tuple, sv, ps.current_sp));
     }
 
-    template<typename ParseState>
-    constexpr void reduce(ParseState& ps, size16_t rule_info_idx) const
+    template<typename Context, typename ParseState>
+    constexpr void reduce(Context&& ctx, ParseState& ps, size16_t rule_info_idx) const
     {
         const auto& ri = rule_infos[rule_info_idx];
         if (ps.options.verbose)
@@ -2574,19 +2635,19 @@ private:
 
         ps.cursor_stack.push_back(new_cursor_value);
         value_variant_type* start = ps.value_stack.data() + ps.value_stack.size() - ri.r_elements;
-        value_variant_type lvalue(value_reductors[ri.r_idx](rule_tuple, start));
+        value_variant_type lvalue(ps.reductors.invoke(std::forward<Context>(ctx), ri.r_idx, start));
         ps.value_stack.erase(ps.value_stack.end() - ri.r_elements, ps.value_stack.end());
         ps.value_stack.emplace_back(std::move(lvalue));
     }
 
-    template<typename ParseState>
-    constexpr void rr_conflict(ParseState& ps, size16_t rule_idx) const
+    template<typename Context, typename ParseState>
+    constexpr void rr_conflict(Context&& ctx, ParseState& ps, size16_t rule_idx) const
     {
         if (ps.options.verbose)
         {
             ps.error_stream << ps.current_sp << " PARSE: R/R conflict encountered \n";
         }
-        reduce(ps, rule_idx);
+        reduce(std::forward<Context>(ctx), ps, rule_idx);
     }
 
     template<typename ParseState>
@@ -2816,9 +2877,6 @@ private:
     term_tuple_type term_tuple;
     nterm_tuple_type nterm_tuple;
     rule_tuple_type rule_tuple;
-
-    using value_reductor = value_variant_type(*)(const rule_tuple_type&, value_variant_type*);
-    value_reductor value_reductors[rule_count] = {};
 
     using string_view_to_term_value_t = value_variant_type(*)(const term_tuple_type&, const std::string_view&, source_point);
     string_view_to_term_value_t term_ftors[term_count] = {};
