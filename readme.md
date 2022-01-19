@@ -822,7 +822,7 @@ rules(
 )
 ```
 
-## Default functors
+### Default functors
 
 There is a situation where the functor can be entirely omitted, that is whenever a left side value type is _move constructible_ from right side value types:
 
