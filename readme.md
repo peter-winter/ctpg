@@ -817,7 +817,7 @@ denoting element numbers for the list and the value to append.
 So in case of comma separeted numbers, we can simply use:
 ```c++
 rules(
-    list(number) >= construct<std::vector<int>, 1>{},
+    list(number) >= construct<list_type, 1>{},
     list(list, ',', number) >= push_back<1, 3>{}  // 1 is the list, 3 is the number
 )
 ```
