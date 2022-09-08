@@ -1017,6 +1017,14 @@ namespace detail
 template<typename Iterator>
 struct recognized_term
 {
+    constexpr recognized_term(Iterator it, size16_t term_idx):
+        it(it), term_idx(term_idx)
+    {}
+
+    constexpr recognized_term(Iterator it):
+        it(it), term_idx(uninitialized16)
+    {}
+
     Iterator it;
     size16_t term_idx;
 };
@@ -1406,7 +1414,7 @@ namespace regex
     {
         size16_t state_idx = 0;
         Iterator it_prev = start;
-        recognized_term<Iterator> rt{ start, uninitialized16 };
+        recognized_term<Iterator> rt(start);
         while (true)
         {
             const dfa_state& state = sm[state_idx];
@@ -2767,8 +2775,6 @@ private:
             ps.current_it = after_ws;
         }
 
-        using res_type = recognized_term<typename ParseState::iterator>;
-
         if (ps.current_it == ps.buffer_end)
         {
             ps.current_term_idx = eof_idx;
@@ -2776,7 +2782,7 @@ private:
             return eof_idx;
         }
 
-        res_type res{};
+        recognized_term<typename ParseState::iterator> res(ps.current_it);
         match_options opts;
         opts.set_verbose(ps.options.verbose);
 
@@ -3130,13 +3136,13 @@ namespace regex
                 error_stream << sp << " LEXER MATCH: Recognized " << idx << " \n";
             term_end += len;
             sp.update(start, term_end);
-            return recognized_term<Iterator>{term_end, idx};
+            return recognized_term<Iterator>(term_end, idx);
         }
 
         template<typename Iterator>
         constexpr auto not_recognized(Iterator start) const
         {
-            return recognized_term<Iterator>{start, uninitialized16};
+            return recognized_term<Iterator>(start);
         }
     };
 

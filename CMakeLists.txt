@@ -57,6 +57,7 @@ if (CTPG_ENABLE_TESTS)
         tests/error_recovery.cpp
         tests/buffers.cpp
         tests/contexts.cpp
+        tests/custom_lexer.cpp
     )
 
     target_link_libraries(testbin PRIVATE Catch2::Catch2 ctpg::ctpg)

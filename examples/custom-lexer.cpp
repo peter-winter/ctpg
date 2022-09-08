@@ -22,9 +22,15 @@ public:
         if (start == end)
             return not_recognized(start);
         if (*start >= '0' && *start <= '9')
+        {
+            // idx == 1, recognized 'number' term
             return recognized(1, options, sp, start, error_stream);
+        }
         if (*start == ',')
+        {
+            // idx == 0, recognized 'comma' term
             return recognized(0, options, sp, start, error_stream);
+        }
         return not_recognized(start);
     }
 
@@ -40,14 +46,16 @@ private:
         Iterator term_end = start;
         if (options.verbose)
             error_stream << sp << " LEXER MATCH: Recognized " << idx << " \n";
+
+        // always increase term_end by one, since all terms have length == 1
         sp.update(start, ++term_end);
-        return recognized_term<Iterator>{term_end, idx};
+        return recognized_term(term_end, idx);
     }
 
     template<typename Iterator>
     constexpr auto not_recognized(Iterator start) const
     {
-        return recognized_term<Iterator>{start, uninitialized16};
+        return recognized_term(start);
     }
 };
 
@@ -58,7 +66,7 @@ constexpr custom_term comma(",", create<no_type>{} );
 
 constexpr parser p(
     list,
-    terms(comma, number),
+    terms(comma, number),       // comma == 0, number == 1
     nterms(list),
     rules(
         list(number),
