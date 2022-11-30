@@ -1164,7 +1164,7 @@ Recovery follows the rules:
 To see how ***error*** in rules affect the parse table generation take a look at the diagnostic output and look for the <error_recovery_token> occurrences.
 See the [Diagnostics](#diagnostics) section for details.
 
-### Custom lexicar analyzer
+### Custom lexical analyzer
 
 It is possible to define a custom lexical analyzer instead of the one automatically generated from terms.
 To achieve this use the 5th argument to the parser definition and pass a ```use_lexer``` object:
