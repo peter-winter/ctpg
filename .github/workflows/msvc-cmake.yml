@@ -16,8 +16,9 @@ jobs:
 
     - name: Install Catch2
       run: |
-        vcpkg integrate install
-        vcpkg install catch2:x64-windows
+        git clone --branch v2.x https://github.com/catchorg/Catch2
+        cmake -S Catch2 -B Catch2/build -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX="$env:CMAKE_PREFIX_PATH"
+        cmake --build Catch2/build --target install
 
     - name: Configure CMake
       run: cmake -S . -B build "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake"
