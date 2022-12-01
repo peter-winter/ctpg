@@ -9,7 +9,7 @@ What's more, the generated parser is actually itself capable of parsing in compi
 All it needs is a C++17 compiler!
 
 ### Contents
-* [Installation](#Installation)
+* [Installation](#installation)
 * [Compiler support](#compiler-support)
 * [Usage](#usage)
 * [Explanation](#explanation)
@@ -35,6 +35,7 @@ All it needs is a C++17 compiler!
    * [Buffers](#buffers)
    * [Typed terms](#typed-terms)
    * [Error recovery](#error-recovery)
+   * [Custom lexical analyzer](#custom-lexical-analyzer)
 * [Regular expressions](#regular-expressions)
 * [Diagnostics](#diagnostics)
 
@@ -1162,6 +1163,65 @@ Recovery follows the rules:
 
 To see how ***error*** in rules affect the parse table generation take a look at the diagnostic output and look for the <error_recovery_token> occurrences.
 See the [Diagnostics](#diagnostics) section for details.
+
+### Custom lexical analyzer
+
+It is possible to define a custom lexical analyzer instead of the one automatically generated from terms.
+To achieve this use the 5th argument to the parser definition and pass a ```use_lexer``` object:
+
+```c++
+
+constexpr nterm<int> list("list");
+
+constexpr custom_term number("number", [](auto sv){ return int(sv[0]) - '0';} );
+constexpr custom_term comma(",", create<no_type>{} );
+
+constexpr parser p(
+    list,
+    terms(comma, number),
+    nterms(list),
+    rules(
+        list(number),
+        list(list, comma, number)
+            >= [](int sum, skip, int x){ return sum + x; }
+    ),
+    use_lexer<int_lexer>{}
+);
+```
+To use custom lexerical analyzer define ```custom_term``` objects instead of traditional terms.
+The ```custom_term``` class acts like a ```typed_term```, you need to provide a functor to it's definition, from which the term
+deduces it's value type.
+
+The lexer class needs to implement a ```match``` method:
+
+```c++
+class int_lexer
+{
+public:
+    template<typename Iterator, typename ErrorStream>
+    constexpr recognized_term match(
+        match_options options,
+        source_point sp,
+        Iterator start,
+        Iterator end,
+        ErrorStream& error_stream);
+};
+```
+
+The ```recognized_term``` is a simple struct with two members: ```term_idx``` and ```len```.
+When returning this structure from ```match``` return term index (starting from 0 according to ```terms``` call in a parser definition)
+and the length of recognized term.
+
+
+```c++
+struct recognized_term
+{
+    constexpr recognized_term() = default;                      // use this overload to indicate lexer error - no term matched
+    constexpr recognized_term(size16_t term_idx, size_t len);   // use this overload to return a match
+};
+```
+
+Take a look at the **custom-lexer.cpp** example for a tutorial on custom lexical analyzer implementation.
 
 ## Regular expressions
 

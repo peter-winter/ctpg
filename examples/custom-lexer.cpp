@@ -20,12 +20,18 @@ public:
         ErrorStream& error_stream)
     {
         if (start == end)
-            return not_recognized(start);
-        if (*start >= '0' && *start <= '9')
-            return recognized(1, options, sp, start, error_stream);
+            return recognized_term{};
+        if (*start >= '0' && *start <= '9')     // recognize only single digit numbers
+        {
+            // idx == 1, recognized 'number' term
+            return recognized(1, options, start, sp, error_stream);
+        }
         if (*start == ',')
-            return recognized(0, options, sp, start, error_stream);
-        return not_recognized(start);
+        {
+            // idx == 0, recognized 'comma' term
+            return recognized(0, options, start, sp, error_stream);
+        }
+        return recognized_term{};
     }
 
 private:
@@ -33,21 +39,16 @@ private:
     constexpr auto recognized(
         size16_t idx,
         match_options options,
-        source_point sp,
         Iterator start,
+        source_point sp,
         ErrorStream& error_stream)
     {
-        Iterator term_end = start;
         if (options.verbose)
             error_stream << sp << " LEXER MATCH: Recognized " << idx << " \n";
-        sp.update(start, ++term_end);
-        return recognized_term<Iterator>{term_end, idx};
-    }
 
-    template<typename Iterator>
-    constexpr auto not_recognized(Iterator start) const
-    {
-        return recognized_term<Iterator>{start, uninitialized16};
+        // all terms have length == 1
+        sp.update(start, start + 1);
+        return recognized_term(idx, 1);
     }
 };
 
@@ -58,7 +59,7 @@ constexpr custom_term comma(",", create<no_type>{} );
 
 constexpr parser p(
     list,
-    terms(comma, number),
+    terms(comma, number),       // comma == 0, number == 1
     nterms(list),
     rules(
         list(number),
