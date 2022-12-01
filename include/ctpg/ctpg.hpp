@@ -2817,9 +2817,9 @@ private:
         constexpr char space_chars_newline[] = { 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0x00 };
         constexpr char space_chars_no_newline[] = { 0x09, 0x0b, 0x0c, 0x0d, 0x20, 0x00 };
 
-        const auto& space_chars = ps.options.skip_newline
-                                     ? space_chars_newline
-                                     : space_chars_no_newline;
+        const char* space_chars = ps.options.skip_newline
+                                    ? space_chars_newline
+                                    : space_chars_no_newline;
 
         auto start = ps.current_it;
         while (true)
