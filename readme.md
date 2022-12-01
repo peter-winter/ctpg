@@ -1195,13 +1195,30 @@ deduces it's value type.
 The lexer class needs to implement a ```match``` method:
 
 ```c++
-template<typename Iterator, typename ErrorStream>
-constexpr recognized_term<Iterator> match(
-   match_options options,
-   source_point sp,
-   Iterator start,
-   Iterator end,
-   ErrorStream& error_stream);
+class int_lexer
+{
+public:
+    template<typename Iterator, typename ErrorStream>
+    constexpr recognized_term match(
+        match_options options,
+        source_point sp,
+        Iterator start,
+        Iterator end,
+        ErrorStream& error_stream);
+};
+```
+
+The ```recognized_term``` is a simple struct with two members: ```term_idx``` and ```len```.
+When returning this structure from ```match``` return term index (starting from 0 according to ```terms``` call in a parser definition)
+and the length of recognized term.
+
+
+```c++
+struct recognized_term
+{
+    constexpr recognized_term() = default;                      // use this overload to indicate lexer error - no term matched
+    constexpr recognized_term(size16_t term_idx, size_t len);   // use this overload to return a match
+};
 ```
 
 Take a look at the **custom-lexer.cpp** example for a tutorial on custom lexical analyzer implementation.

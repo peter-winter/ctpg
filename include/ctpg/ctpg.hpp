@@ -709,6 +709,7 @@ namespace buffers
             constexpr bool operator == (const iterator& other) const { return ptr == other.ptr; }
             constexpr bool operator != (const iterator& other) const { return ptr != other.ptr; }
             constexpr iterator& operator += (size_t len) { ptr += len; return *this; }
+            constexpr iterator operator + (size_t len) { iterator i(*this); i.ptr += len; return i; }
         };
 
         constexpr iterator begin() const { return iterator{ data }; }
@@ -1014,19 +1015,16 @@ namespace detail
     };
 }
 
-template<typename Iterator>
 struct recognized_term
 {
-    constexpr recognized_term(Iterator it, size16_t term_idx):
-        it(it), term_idx(term_idx)
+    constexpr recognized_term() = default;
+
+    constexpr recognized_term(size16_t term_idx, size_t len):
+        term_idx(term_idx), len(len)
     {}
 
-    constexpr recognized_term(Iterator it):
-        it(it), term_idx(uninitialized16)
-    {}
-
-    Iterator it;
-    size16_t term_idx;
+    size16_t term_idx = uninitialized16;
+    size_t len = uninitialized16;
 };
 
 namespace regex
@@ -1413,15 +1411,15 @@ namespace regex
         ErrorStream& error_stream)
     {
         size16_t state_idx = 0;
-        Iterator it_prev = start;
-        recognized_term<Iterator> rt(start);
+        recognized_term rt;
+        size_t len = 0;
         while (true)
         {
             const dfa_state& state = sm[state_idx];
             size16_t rec_idx = state.conflicted_recognition[0];
             if (rec_idx != uninitialized16)
             {
-                rt.it = start;
+                rt.len = len;
                 rt.term_idx = rec_idx;
 
                 if (options.verbose)
@@ -1429,16 +1427,13 @@ namespace regex
                     error_stream << sp << " REGEX MATCH: Recognized " << rec_idx << "\n";
                 }
             }
-            sp.update(it_prev, start);
-
+            
             if (start == end)
                 break;
 
             size16_t tr = state.transitions[utils::char_to_idx(*start)];
             if (tr == uninitialized16)
             {
-                if (rt.term_idx == uninitialized16)
-                    rt.it = start;
                 break;
             }
 
@@ -1449,8 +1444,9 @@ namespace regex
                 error_stream << sp << " REGEX MATCH: Current char " << utils::c_names.name(*start) << "\n";
                 error_stream << sp << " REGEX MATCH: New state " << state_idx << "\n";
             }
-            it_prev = start;
+            sp.update(start, start + 1);
             ++start;
+            ++len;
         }
         return rt;
     }
@@ -1722,7 +1718,7 @@ namespace detail
             options(options),
             current_sp{1, 1},
             current_it(buffer_begin),
-            current_term_end_it(buffer_begin),
+            current_end_it(buffer_begin),
             buffer_end(buffer_end),
             reductors(reductors),
             current_term_idx(uninitialized16),
@@ -1748,7 +1744,7 @@ namespace detail
         parse_options options;
         source_point current_sp;
         iterator current_it;
-        iterator current_term_end_it;
+        iterator current_end_it;
         iterator buffer_end;
         const ValueReductors& reductors;
         size16_t current_term_idx;
@@ -1957,7 +1953,7 @@ public:
 
             if (entry.kind == parse_table_entry_kind::shift)
             {
-                shift(ps, buffer.get_view(ps.current_it, ps.current_term_end_it), t_idx, entry.shift);
+                shift(ps, buffer.get_view(ps.current_it, ps.current_end_it), t_idx, entry.shift);
                 consume_term(ps);
             }
             else if (entry.kind == parse_table_entry_kind::shift_error_recovery_token)
@@ -2524,9 +2520,12 @@ private:
         s << nterm_names[ri.l_idx] << " <- ";
         if (ri.r_elements > 0)
             s << get_symbol_name(right_sides[ri.r_idx][0]);
-        for (size_t i = 1u; i < ri.r_elements; ++i)
+        if constexpr (max_rule_element_count > 1)
         {
-            s << " " << get_symbol_name(right_sides[ri.r_idx][i]);
+            for (size_t i = 1u; i < ri.r_elements; ++i)
+            {
+                s << " " << get_symbol_name(right_sides[ri.r_idx][i]);
+            }
         }
     }
 
@@ -2702,8 +2701,8 @@ private:
     template<typename ParseState>
     constexpr void consume_term(ParseState& ps) const
     {
-        ps.current_sp.update(ps.current_it, ps.current_term_end_it);
-        ps.current_it = ps.current_term_end_it;
+        ps.current_sp.update(ps.current_it, ps.current_end_it);
+        ps.current_it = ps.current_end_it;
     }
 
     template<typename ParseState>
@@ -2765,7 +2764,7 @@ private:
         if (ps.in_recovery_mode())
             return error_recovery_token_idx;
 
-        if (ps.current_it != ps.current_term_end_it)
+        if (ps.current_it != ps.current_end_it)
             return ps.current_term_idx;
 
         if (ps.options.skip_whitespace)
@@ -2782,7 +2781,7 @@ private:
             return eof_idx;
         }
 
-        recognized_term<typename ParseState::iterator> res(ps.current_it);
+        recognized_term res;
         match_options opts;
         opts.set_verbose(ps.options.verbose);
 
@@ -2796,8 +2795,8 @@ private:
             res = custom_lexer.match(opts, ps.current_sp, ps.current_it, ps.buffer_end, ps.error_stream);
         }
 
-        ps.current_term_end_it = res.it;
         ps.current_term_idx = res.term_idx;
+        ps.current_end_it = ps.current_it + res.len;
 
         if (ps.current_term_idx == uninitialized16)
         {
@@ -2818,7 +2817,7 @@ private:
         constexpr char space_chars_newline[] = { 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0x00 };
         constexpr char space_chars_no_newline[] = { 0x09, 0x0b, 0x0c, 0x0d, 0x20, 0x00 };
 
-        const auto space_chars = ps.options.skip_newline
+        const auto& space_chars = ps.options.skip_newline
                                      ? space_chars_newline
                                      : space_chars_no_newline;
 
@@ -2950,12 +2949,12 @@ namespace regex
             ErrorStream& error_stream)
         {
             if (start == end)
-                return not_recognized(start);
+                return recognized_term{};
 
             char c = *start;
 
             auto res = [&](size16_t idx, size_t len)
-            { return recognized(idx, len, options, sp, start, error_stream); };
+            { return recognized(idx, len, options, sp, error_stream); };
 
             if (specials[utils::char_to_idx(c)] != 0)
                 return res(specials[utils::char_to_idx(c)], 1);
@@ -2968,7 +2967,7 @@ namespace regex
             if (ok)
                 return res(1, len);
 
-            return not_recognized(start);
+            return recognized_term{};
         }
 
     private:
@@ -3122,27 +3121,17 @@ namespace regex
             return true;
         }
 
-        template<typename Iterator, typename ErrorStream>
+        template<typename ErrorStream>
         constexpr auto recognized(
             size16_t idx,
             size_t len,
             match_options options,
             source_point sp,
-            Iterator start,
             ErrorStream& error_stream)
         {
-            Iterator term_end = start;
             if (options.verbose)
                 error_stream << sp << " LEXER MATCH: Recognized " << idx << " \n";
-            term_end += len;
-            sp.update(start, term_end);
-            return recognized_term<Iterator>(term_end, idx);
-        }
-
-        template<typename Iterator>
-        constexpr auto not_recognized(Iterator start) const
-        {
-            return recognized_term<Iterator>(start);
+            return recognized_term(idx, len);
         }
     };
 
@@ -3343,14 +3332,15 @@ namespace regex
         constexpr bool match(match_options opts, const Buffer& buf, Stream& s) const
         {
             auto res = dfa_match(sm, opts, source_point{}, buf.begin(), buf.end(), s);
-            if (res.term_idx == 0 && res.it == buf.end())
+            auto end = buf.begin() + res.len;
+            if (res.term_idx == 0 && end == buf.end())
                 return true;
             else
             {
                 if (res.term_idx == 0)
-                    s << "Leftover text after recognition: " << buf.get_view(res.it, buf.end()) << "\n";
+                    s << "Leftover text after recognition: " << buf.get_view(end, buf.end()) << "\n";
                 else
-                    s << "Unexpected char: " << utils::c_names.name(*res.it) << "\n";
+                    s << "Unexpected char: " << utils::c_names.name(*end) << "\n";
                 return false;
             }
         }

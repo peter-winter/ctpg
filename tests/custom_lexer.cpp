@@ -20,24 +20,23 @@ namespace test
             ErrorStream& error_stream)
         {
             if (start == end)
-                return not_recognized(start);
+                return recognized_term{};
 
             // 'a' -> 0
             // 'b' -> 1
             // "bla" -> 2
             if (*start == 'a')
-                return recognized(0, 1, options, sp, start, error_stream);
+                return recognized(0, 1, options, start, sp, error_stream);
             Iterator tmp = start;
             if (*tmp++ == 'b')
             {
                 if (tmp != end && *tmp++ == 'l')
                     if (tmp != end && *tmp++ == 'a')
-                        return recognized(2, 3, options, sp, start, error_stream);
-                return recognized(1, 1, options, sp, start, error_stream);
+                        return recognized(2, 3, options, start, sp, error_stream);
+                return recognized(1, 1, options, start, sp, error_stream);
             }
 
-
-            return not_recognized(start);
+            return recognized_term{};
         }
 
     private:
@@ -46,22 +45,14 @@ namespace test
             size16_t idx,
             size_t len,
             match_options options,
-            source_point sp,
             Iterator start,
+            source_point sp,
             ErrorStream& error_stream)
         {
             if (options.verbose)
                 error_stream << sp << " LEXER MATCH: Recognized " << idx << " \n";
-            Iterator term_end = start;
-            term_end += len;
-            sp.update(start, term_end);
-            return recognized_term(term_end, idx);
-        }
-
-        template<typename Iterator>
-        constexpr auto not_recognized(Iterator start) const
-        {
-            return recognized_term(start);
+            sp.update(start, start + len);
+            return recognized_term(idx, len);
         }
     };
 
