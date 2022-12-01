@@ -21,7 +21,7 @@ jobs:
         cmake --build Catch2/build --target install
 
     - name: Configure CMake
-      run: cmake -S . -B build "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake"
+      run: cmake -S . -B build
         
     - name: Build
       run: cmake --build build --config Release
