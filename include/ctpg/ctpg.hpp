@@ -1041,6 +1041,9 @@ namespace regex
             }
     }
 
+    static const size_t transitions_size = meta::distinct_values_count<char>;
+
+    template<size_t N>
     struct dfa_state
     {
         constexpr dfa_state()
@@ -1053,8 +1056,8 @@ namespace regex
         size8_t end_state = 0;
         size8_t unreachable = 0;
         conflicted_terms conflicted_recognition = { uninitialized16, uninitialized16, uninitialized16, uninitialized16 };
-        static const size_t transitions_size = meta::distinct_values_count<char>;
         size16_t transitions[transitions_size] = {};
+        stdex::cbitset<N> merged_from = {};
     };
 
     struct char_range
@@ -1119,7 +1122,7 @@ namespace regex
     };
 
     template<size_t N>
-    using dfa = stdex::cvector<dfa_state, N>;
+    using dfa = stdex::cvector<dfa_state<N>, N>;
 
     class dfa_size_analyzer
     {
@@ -1159,6 +1162,7 @@ namespace regex
         {}
 
         using slice = utils::slice;
+        using dfa_state = dfa_state<N>;
 
         constexpr dfa_state& transition(dfa_state& from, const char_subset& s)
         {
@@ -1296,8 +1300,15 @@ namespace regex
         {
             if (to == from)
                 return;
+
             dfa_state& s_from = sm[from];
             dfa_state& s_to = sm[to];
+
+            if (s_to.merged_from.test(from))
+                return;
+
+            s_to.merged_from.set(from);
+
             s_from.start_state = 0;
             if (keep_end_state)
                 s_to.end_state = s_to.end_state || s_from.end_state;
@@ -1306,7 +1317,7 @@ namespace regex
 
             s_from.unreachable = mark_from_as_unreachable ? 1 : 0;
 
-            for (size_t i = 0; i < dfa_state::transitions_size; ++i)
+            for (size_t i = 0; i < transitions_size; ++i)
             {
                 size16_t& tr_from = s_from.transitions[i];
                 if (tr_from == uninitialized16)
@@ -1415,7 +1426,7 @@ namespace regex
         size_t len = 0;
         while (true)
         {
-            const dfa_state& state = sm[state_idx];
+            const auto& state = sm[state_idx];
             size16_t rec_idx = state.conflicted_recognition[0];
             if (rec_idx != uninitialized16)
             {
@@ -1451,8 +1462,8 @@ namespace regex
         return rt;
     }
 
-    template<typename Stream, typename StrTable>
-    constexpr void write_dfa_state_diag_str(const dfa_state& st, Stream& s, size16_t idx, const StrTable& term_names)
+    template<typename Stream, typename StrTable, size_t N>
+    constexpr void write_dfa_state_diag_str(const dfa_state<N>& st, Stream& s, size16_t idx, const StrTable& term_names)
     {
         s << "STATE " << idx;
         if (st.unreachable)
@@ -1488,11 +1499,11 @@ namespace regex
             }
         };
 
-        stdex::cvector<char, dfa_state::transitions_size> tmp;
+        stdex::cvector<char, transitions_size> tmp;
         size16_t prev = uninitialized16;
-        for (size_t i = 0; i < dfa_state::transitions_size + 1; ++i)
+        for (size_t i = 0; i < transitions_size + 1; ++i)
         {
-            size16_t to = (i == dfa_state::transitions_size ? uninitialized16 : st.transitions[i]);
+            size16_t to = (i == transitions_size ? uninitialized16 : st.transitions[i]);
             if (to == prev && to != uninitialized16)
                 tmp.push_back(utils::idx_to_char(i));
             else
