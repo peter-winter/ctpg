@@ -1162,23 +1162,23 @@ namespace regex
         {}
 
         using slice = utils::slice;
-        using dfa_state = dfa_state<N>;
+        using dfa_state_n = dfa_state<N>;
 
-        constexpr dfa_state& transition(dfa_state& from, const char_subset& s)
+        constexpr dfa_state_n& transition(dfa_state_n& from, const char_subset& s)
         {
             for (size_t i = 0; i < s.size(); ++i)
                 if (s.test(i))
                 {
                     from.transitions[i] = size16_t(sm.size());
                 }
-            sm.push_back(dfa_state());
+            sm.push_back(dfa_state_n());
             return sm.back();
         }
 
-        constexpr dfa_state& transition(dfa_state& from, char c)
+        constexpr dfa_state_n& transition(dfa_state_n& from, char c)
         {
             from.transitions[utils::char_to_idx(c)] = size16_t(sm.size());
-            sm.push_back(dfa_state());
+            sm.push_back(dfa_state_n());
             return sm.back();
         }
 
@@ -1190,9 +1190,9 @@ namespace regex
         constexpr slice primary_subset(const char_subset& s)
         {
             size_t old_size = sm.size();
-            sm.push_back(dfa_state());
+            sm.push_back(dfa_state_n());
             sm.back().start_state = 1;
-            dfa_state& to = transition(sm.back(), s);
+            dfa_state_n& to = transition(sm.back(), s);
             to.end_state = 1;
             return slice{ size32_t(old_size), 2 };
         }
@@ -1301,8 +1301,8 @@ namespace regex
             if (to == from)
                 return;
 
-            dfa_state& s_from = sm[from];
-            dfa_state& s_to = sm[to];
+            dfa_state_n& s_from = sm[from];
+            dfa_state_n& s_to = sm[to];
 
             if (s_to.merged_from.test(from))
                 return;
@@ -1343,7 +1343,7 @@ namespace regex
             }
         }
 
-        constexpr void mark_end_state(dfa_state& s, size16_t idx)
+        constexpr void mark_end_state(dfa_state_n& s, size16_t idx)
         {
             if (!s.end_state)
                 return;
