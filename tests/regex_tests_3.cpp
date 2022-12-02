@@ -12,6 +12,7 @@ namespace test
     constexpr char pattern_precedence[] = "a|bc*";
 
     constexpr char pattern_number[] = "0|[1-9][0-9]*";
+    constexpr char pattern_alt_with_same_rep_prefix[] = "a*b|a*";
 }
 
 TEST_CASE("star", "[regex term]")
@@ -119,3 +120,11 @@ TEST_CASE("number", "[regex term]")
     REQUIRE( !r.match("ss") );
     REQUIRE( !r.match("") );
 }
+
+TEST_CASE("prefix", "[regex term]")
+{
+    constexpr ctpg::regex::expr<test::pattern_alt_with_same_rep_prefix> r;
+
+    REQUIRE( r.match("aaaa") );
+}
+
