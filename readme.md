@@ -78,9 +78,9 @@ makepkg -si
    
 Tested on:
 
-- GCC 10.3, 11.x
-- Clang 12.x, 13.x
-- MSVC 19.30
+- GCC 10.3+, 11.x, 12.x
+- Clang 12.x, 13.x, 14.x
+- MSVC 19.30+
 
 ## Usage
 Following code demonstrates a simple parser which takes a comma separated list of integer numbers as argument and prints a sum of them.
