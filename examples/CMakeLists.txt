@@ -16,6 +16,7 @@ set(examples
     simple-expr-parser
     source-tracking
     typed-terms
+    expr-parser
 )
 
 foreach (example IN LISTS examples)

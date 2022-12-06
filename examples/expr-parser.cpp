@@ -1,29 +1,9 @@
-#include "../include/ctpg/ctpg.hpp"
+#include <ctpg/ctpg.hpp>
 #include <iostream>
 
 using namespace ctpg;
 using namespace ctpg::buffers;
 using namespace ctpg::ftors;
-
-struct binary_op
-{
-    constexpr int operator()(int x1, char op, int x2) const
-    {
-        switch (op)
-        {
-        case '+':
-            return x1 + x2;
-        case '-':
-            return x1 - x2;
-        case '*':
-            return x1 * x2;
-        case '/':
-            return x1 / x2;
-        default:
-            return 0;
-        }
-    }
-};
 
 constexpr int get_int(std::string_view sv)
 {
@@ -39,37 +19,47 @@ constexpr int get_int(std::string_view sv)
 
 constexpr nterm<int> expr("expr");
 
-constexpr char_term o_plus('+', 1, associativity::ltor);
-constexpr char_term o_minus('-', 1, associativity::ltor);
-constexpr char_term o_mul('*', 2, associativity::ltor);
-constexpr char_term o_div('/', 2, associativity::ltor);
+constexpr string_term o_or("||", 1, associativity::ltor);
+constexpr string_term o_and("&&", 2, associativity::ltor);
+constexpr char_term o_bit_or('|', 3, associativity::ltor);
+constexpr char_term o_bit_xor('^', 4, associativity::ltor);
+constexpr char_term o_bit_and('&', 5, associativity::ltor);
+constexpr string_term o_eq("==", 6, associativity::ltor);
+constexpr string_term o_neq("!=", 6, associativity::ltor);
+constexpr char_term o_plus('+', 7, associativity::ltor);
+constexpr char_term o_minus('-', 7, associativity::ltor);
+constexpr char_term o_mul('*', 8, associativity::ltor);
+constexpr string_term o_pow("**", 8, associativity::ltor);
+constexpr char_term o_div('/', 8, associativity::ltor);
+constexpr char_term o_mod('%', 8, associativity::ltor);
 
 constexpr char number_pattern[] = "[1-9][0-9]*";
 constexpr regex_term<number_pattern> number("number");
 
 constexpr parser p(
     expr,
-    terms(number, o_plus, o_minus, o_mul, o_div, '(', ')', '~', '`', '!', '@', '#', '$', '%', '^', '&', '|'),
+    terms('0', number, o_plus, o_minus, o_mul, o_div, '(', ')', '~', "&&", "||", "**", "==", "!=", '%', '^', '&', '|', '!'),
     nterms(expr),
     rules(
-        expr(expr, '+', expr) >= binary_op{},
-        expr(expr, '-', expr) >= binary_op{},
-        expr(expr, '*', expr) >= binary_op{},
-        expr(expr, '/', expr) >= binary_op{},
-        expr(expr, '~', expr) >= val(0),
-        expr(expr, '`', expr) >= val(0),
-        expr(expr, '!', expr) >= val(0),
-        expr(expr, '@', expr) >= val(0),
-        expr(expr, '#', expr) >= val(0),
-        expr(expr, '%', expr) >= val(0),
-        expr(expr, '^', expr) >= val(0),
-        expr(expr, '&', expr) >= val(0),
-        expr(expr, '|', expr) >= val(0),
-        expr('-', expr)[3] >= [](char, int x) { return -x; },
-        expr('!', expr)[3] >= val(0),
-        expr('~', expr)[3] >= val(0),
+        expr(expr, '+', expr) >= [](auto e1, skip, auto e2){ return e1 + e2; },
+        expr(expr, '-', expr) >= [](auto e1, skip, auto e2){ return e1 - e2; },
+        expr(expr, '*', expr) >= [](auto e1, skip, auto e2){ return e1 * e2; },
+        expr(expr, '/', expr) >= [](auto e1, skip, auto e2){ return e1 / e2; },
+        expr(expr, "**", expr) >= [](auto e1, skip, auto e2){ int res = 1; for(int i = 0; i < e2; ++i) res *= e1; return res; },
+        expr(expr, "&&", expr) >= [](auto e1, skip, auto e2){ return e1 && e2; },
+        expr(expr, "||", expr) >= [](auto e1, skip, auto e2){ return e1 || e2; },
+        expr(expr, "==", expr) >= [](auto e1, skip, auto e2){ return e1 == e2; },
+        expr(expr, "!=", expr) >= [](auto e1, skip, auto e2){ return e1 != e2; },
+        expr(expr, '%', expr) >= [](auto e1, skip, auto e2){ return e1 % e2; },
+        expr(expr, '^', expr) >= [](auto e1, skip, auto e2){ return e1 ^ e2; },
+        expr(expr, '&', expr) >= [](auto e1, skip, auto e2){ return e1 & e2; },
+        expr(expr, '|', expr) >= [](auto e1, skip, auto e2){ return e1 | e2; },
+        expr('-', expr)[9] >= [](skip, int e) { return -e; },
+        expr('!', expr)[9] >= [](skip, int e) { return !e; },
+        expr('~', expr)[9] >= [](skip, int e) { return ~e; },
         expr('(', expr, ')') >= _e2,
-        expr(number) >= [](const auto& sv){ return get_int(sv); }
+        expr(number) >= [](const auto& sv){ return get_int(sv); },
+        expr('0') >= val(0)
     )
 );
 

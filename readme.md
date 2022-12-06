@@ -1266,7 +1266,6 @@ The output contains 2 sections: one for syntax analyzer starting with the word *
 
 ```
 Parser object size: <number>
-Parser state size: <number>
 Parser max number of states: <number>
 Parser number of states: <number>
 ```

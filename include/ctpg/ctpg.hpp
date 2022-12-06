@@ -2001,7 +2001,6 @@ public:
         s << "PARSER" << "\n\n";
 
         s << "Parser object size: " << sizeof(*this) << "\n";
-        s << "Parser state size: " << sizeof(state) << "\n";
         s << "Parser max number of states: " << max_states << "\n";
         s << "Parser number of states: " << state_count << "\n";
         s << "\n";
@@ -2094,20 +2093,8 @@ private:
         size16_t rule_last_terms[rule_count] = { };
     };
 
-    struct state
-    {
-        using situation_vector = stdex::cvector<size32_t, situation_count>;
-        using situation_set = stdex::cbitset<situation_address_space_size>;
-
-        situation_set all_situations = {};
-        situation_vector all_situations_vec = {};
-        situation_set kernel = {};
-        situation_vector situations_by_symbol[symbol_count] = {};
-        size32_t index = -1;
-    };
-
-    using state_table = state[max_states];
-
+    using situation_set = stdex::cbitset<situation_address_space_size>;
+    
     struct situation_info
     {
         size16_t rule_info_idx = uninitialized16;
@@ -2145,42 +2132,50 @@ private:
     };
 
     using lr1_parse_table = parse_table_entry[max_states][symbol_count];
+    using simple_state_table = situation_set[max_states];
 
     struct state_analyzer
     {
-        constexpr state_analyzer(const grammar_info& gi, state_table& states, lr1_parse_table& parse_table):
-            gi(gi), states(states), parse_table(parse_table)
+        constexpr state_analyzer(const grammar_info& gi, simple_state_table& simple_states, lr1_parse_table& parse_table):
+            gi(gi), simple_states(simple_states), parse_table(parse_table)
         {}
 
         using term_subset = stdex::cbitset<term_count>;
         using nterm_subset = stdex::cbitset<nterm_count>;
         using right_side_slice_subset = stdex::cbitset<situation_size * rule_count>;
-
-        using situation_vector = typename state::situation_vector;
-        using situation_set = typename state::situation_set;
-
-        constexpr bool add_situation(state& s, size32_t sit_idx, bool to_kernel)
+        using situation_vector = stdex::cvector<size32_t, situation_count>;
+        
+        struct state
         {
-            if (!s.all_situations.test(sit_idx))
+            situation_vector all_situations_vec = {};
+            situation_set kernel = {};
+            situation_vector situations_by_symbol[symbol_count] = {};
+        };
+
+        using state_table = state[max_states];
+        
+        constexpr bool add_situation(size16_t state_idx, size32_t sit_idx, bool to_kernel)
+        {
+            if (!simple_states[state_idx].test(sit_idx))
             {
-                s.all_situations.set(sit_idx);
-                s.all_situations_vec.push_back(sit_idx);
+                simple_states[state_idx].set(sit_idx);
+                states[state_idx].all_situations_vec.push_back(sit_idx);
                 situation_info info = make_situation_info(sit_idx);
                 const rule_info& ri = gi.rule_infos[info.rule_info_idx];
 
                 if (info.after < ri.r_elements)
                 {
                     const symbol& sm = gi.right_sides[ri.r_idx][info.after];
-                    s.situations_by_symbol[sm.get_parse_table_idx()].push_back(sit_idx);
+                    states[state_idx].situations_by_symbol[sm.get_parse_table_idx()].push_back(sit_idx);
                 }
                 else
                 {
-                    s.situations_by_symbol[get_parse_table_idx(true, info.t)].push_back(sit_idx);
+                    states[state_idx].situations_by_symbol[get_parse_table_idx(true, info.t)].push_back(sit_idx);
                 }
 
                 if (to_kernel)
                 {
-                    s.kernel.set(sit_idx);
+                    states[state_idx].kernel.set(sit_idx);
                 }
                 return true;
             }
@@ -2194,15 +2189,14 @@ private:
             state_count = 1;
 
             size16_t current_state = 0;
-            add_situation(states[current_state], root_sit_idx, true);
+            add_situation(current_state, root_sit_idx, true);
 
             while (current_state < state_count)
             {
                 state& s = states[current_state];
-                s.index = current_state;
                 for (auto i = 0u; i < s.all_situations_vec.size(); ++i)
                 {
-                    closure(s, s.all_situations_vec[i]);
+                    closure(current_state, s.all_situations_vec[i]);
                 }
 
                 for (size16_t symbol_idx = 0u; symbol_idx < symbol_count; ++symbol_idx)
@@ -2214,13 +2208,13 @@ private:
             return state_count;
         }
 
-        constexpr void closure(state& s, size32_t sit_idx)
+        constexpr void closure(size16_t state_idx, size32_t sit_idx)
         {
             if (closures_analyzed.test(sit_idx))
             {
                 for(auto i = 0u; i < closures[sit_idx].size(); ++i)
                 {
-                    add_situation(s, closures[sit_idx][i], false);
+                    add_situation(state_idx, closures[sit_idx][i], false);
                 }
                 return;
             }
@@ -2248,18 +2242,18 @@ private:
                     for (auto i = 0u; i < sl.n; ++i)
                     {
                         size32_t new_sit_idx = make_situation_idx(situation_info{ size16_t(sl.start + i), 0, t });
-                        if (add_situation(s, new_sit_idx, false))
+                        if (add_situation(state_idx, new_sit_idx, false))
                             closures[sit_idx].push_back(new_sit_idx);
                     }
                 }
             }
-             
+
             if (after_empty)
             {
                 for (auto i = 0u; i < sl.n; ++i)
                 {
                     size32_t new_sit_idx = make_situation_idx(situation_info{ size16_t(sl.start + i), 0, info.t });
-                    if (add_situation(s, new_sit_idx, false))
+                    if (add_situation(state_idx, new_sit_idx, false))
                         closures[sit_idx].push_back(new_sit_idx);
                 }
             }
@@ -2330,8 +2324,11 @@ private:
                     has_shift = true;
                     situation_info new_info = situation_info{ info.rule_info_idx, size16_t(info.after + 1), info.t };
                     size32_t new_idx = make_situation_idx(new_info);
-                    kernel.set(new_idx);
-                    kernel_vec.push_back(new_idx);
+                    if (!kernel.test(new_idx))
+                    {
+                        kernel.set(new_idx);
+                        kernel_vec.push_back(new_idx);
+                    }
                 }
             }
 
@@ -2350,13 +2347,12 @@ private:
                     new_state_idx = state_count++;
                 }
 
-                auto& s = states[new_state_idx];
                 entry.arg = new_state_idx;
                 if (symbol_idx == get_parse_table_idx(true, error_recovery_token_idx))
                     entry.kind = parse_table_entry_kind::shift_error_recovery_token;
 
                 for (auto sit_idx : kernel_vec)
-                    add_situation(s, sit_idx, true);
+                    add_situation(new_state_idx, sit_idx, true);
             }
             else if (entry.kind == parse_table_entry_kind::reduce)
             {
@@ -2462,13 +2458,15 @@ private:
         }
 
         const grammar_info& gi;
-        state_table& states;
+        simple_state_table& simple_states;
         lr1_parse_table& parse_table;
+
+        state states[max_states] = {};
 
         size16_t state_count = 0;
         situation_set closures_analyzed = {};
         situation_vector closures[situation_address_space_size] = {};
-        
+
         right_side_slice_subset right_side_slice_empty_analyzed = {};
         right_side_slice_subset right_side_slice_empty = {};
         term_subset right_side_slice_first[situation_size * rule_count] = {};
@@ -2658,7 +2656,7 @@ private:
 
         for (size32_t i = 0u; i < situation_address_space_size; ++i)
         {
-            if (states[idx].all_situations.test(i))
+            if (states[idx].test(i))
             {
                 write_situation_diag_str(s, i);
                 s << "\n";
@@ -2969,12 +2967,12 @@ private:
         }
     }
 
-    str_table<term_count> term_names = { };
-    str_table<term_count> term_ids = { };
-    str_table<nterm_count> nterm_names = { };
+    str_table<term_count> term_names = {};
+    str_table<term_count> term_ids = {};
+    str_table<nterm_count> nterm_names = {};
     grammar_info gi = {};
 
-    state_table states = { };
+    simple_state_table states;
     lr1_parse_table parse_table = {};
 
     size16_t state_count = 0;
