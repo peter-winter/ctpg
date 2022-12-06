@@ -1265,13 +1265,23 @@ The output contains 2 sections: one for syntax analyzer starting with the word *
 ### Parser section
 
 ```
-Parser Object size: 51576
+Parser object size: <number>
+Parser state size: <number>
+Parser max number of states: <number>
+Parser number of states: <number>
 ```
 
-First information in the secion is the size of the parser object. This may easily be couple of megabytes for some complex grammars, so consider declaring the parser as
-a static object rather than on local stack.
+The size of the parser object may easily be couple of megabytes for some complex grammars, so consider declaring the parser as a constexpr object rather than on local stack.
 
-Next there is a state machine description in form of:
+Next, there is a rule set description in form of:
+
+RULES
+
+```
+nr nterm <- s0 s1 s2 ... s(rule_length)
+```
+
+Next, there is a state machine description in form of:
 
 ```
 STATE nr
@@ -1312,8 +1322,8 @@ Rules are numbered according to the apearance in the source code (in the ```rule
 Shift/reduce conflicts are presented with lines:
 
 ```
-On <term> shift to <state_nr> S/R CONFLICT, prefer reduce(<rule_nr>) over shift
-On <term> shift to <state_nr> S/R CONFLICT, prefer shift over reduce(<rule_nr>)
+On <term> S/R CONFLICT, prefer reduce(<rule_nr>) over shift
+On <term> S/R CONFLICT, prefer shift over reduce(<rule_nr>)
 ```
 
 Reduce/reduce conflicts look like this:
