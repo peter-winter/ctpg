@@ -33,4 +33,12 @@ foreach (example IN LISTS examples)
             target_compile_options(${example} PRIVATE -Wall -Wextra -pedantic -Werror)
         endif ()
     endif ()
+    if (MSVC)
+        target_compile_options(
+            ${example}
+            PRIVATE
+            /EHsc
+            /constexpr:steps100000000
+        )
+    endif ()
 endforeach ()
