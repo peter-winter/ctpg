@@ -2182,7 +2182,7 @@ private:
             return false;
         }
 
-        constexpr size_t analyze_states()
+        constexpr size16_t analyze_states()
         {
             situation_info root_situation_info{ root_rule_idx, 0, eof_idx };
             size32_t root_sit_idx = make_situation_idx(root_situation_info);
@@ -2334,15 +2334,15 @@ private:
 
             if (entry.kind == parse_table_entry_kind::shift)
             {
-                size32_t new_state_idx = uninitialized32;
-                for (size32_t i = 0u; i < state_count; i++)
+                size16_t new_state_idx = uninitialized16;
+                for (size16_t i = 0u; i < state_count; i++)
                 {
                     if (states[i].kernel == kernel)
                     {
                         new_state_idx = i;
                     }
                 }
-                if (new_state_idx == uninitialized32)
+                if (new_state_idx == uninitialized16)
                 {
                     new_state_idx = state_count++;
                 }
