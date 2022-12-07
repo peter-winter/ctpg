@@ -1310,6 +1310,7 @@ namespace regex
         }
 
         constexpr size_t size() const { return sm.size(); }
+
     private:
         constexpr void merge(size_t to, size_t from, bool keep_end_state = false, bool mark_from_as_unreachable = false)
         {
@@ -1374,8 +1375,8 @@ namespace regex
         const char (&pattern)[N];
     };
 
-    template<size_t N, typename Parser>
-    constexpr void add_term_data_to_dfa(char c, dfa_builder<N>& b, const Parser&, size16_t idx)
+    template<size_t N>
+    constexpr void add_term_data_to_dfa(char c, dfa_builder<N>& b, size16_t idx)
     {
         using slice = utils::slice;
 
@@ -1385,8 +1386,8 @@ namespace regex
         b.alt(prev, new_sl);
     }
 
-    template<size_t N, typename Parser, size_t DataSize>
-    constexpr void add_term_data_to_dfa(const char (&str)[DataSize], dfa_builder<N>& b, const Parser&, size16_t idx)
+    template<size_t N, size_t DataSize>
+    constexpr void add_term_data_to_dfa(const char (&str)[DataSize], dfa_builder<N>& b, size16_t idx)
     {
         using slice = utils::slice;
         slice prev{0, size32_t(b.size())};
@@ -1402,31 +1403,9 @@ namespace regex
         b.alt(prev, whole);
     }
 
-    template<size_t N, typename Parser, size_t PatternSize>
-    constexpr void add_term_data_to_dfa(
-        const regex_pattern_data<PatternSize>& pattern_data,
-        dfa_builder<N>& b,
-        const Parser& p,
-        size16_t idx)
-    {
-        using slice = utils::slice;
-        utils::no_stream s{};
-        std::optional<slice> res = p.parse(
-            parse_options{}.set_skip_whitespace(false),
-            buffers::cstring_buffer(pattern_data.pattern),
-            s
-        );
-
-        if (res.has_value())
-        {
-            slice prev{0, size32_t(b.size())};
-            b.mark_end_states(res.value(), idx);
-            b.alt(prev, res.value());
-        }
-        else
-            throw std::runtime_error("Regex parse error");
-    }
-
+    template<size_t N, size_t PatternSize>
+    constexpr void add_term_data_to_dfa(const regex_pattern_data<PatternSize>& pattern_data, dfa_builder<N>& b, size16_t idx);
+    
     template<size_t N, typename Iterator, typename ErrorStream>
     constexpr auto dfa_match(
         const dfa<N>& sm,
@@ -1548,9 +1527,6 @@ namespace regex
     {
         write_dfa_diag_str(sm, stream, utils::fake_table<const char*>{""});
     }
-
-    template<typename Builder>
-    constexpr auto create_regex_parser(Builder& b);
 }
 
 namespace detail
@@ -2956,14 +2932,7 @@ private:
         if constexpr (generate_lexer)
         {
             regex::dfa_builder<lexer_dfa_size> b(lexer_sm);
-            constexpr bool trivial_lexer = (true && ... && std::tuple_element_t<I, term_tuple_type>::is_trivial);
-            if constexpr (trivial_lexer)
-                (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, no_parser{}, size16_t(I))), ...);
-            else
-            {
-                auto p = regex::create_regex_parser(b);
-                (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, p, size16_t(I))), ...);
-            }
+            (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, size16_t(I))), ...);
         }
     }
 
@@ -3309,8 +3278,7 @@ namespace regex
         return cs;
     }
 
-    template<typename Builder>
-    constexpr auto create_regex_parser(Builder& b)
+    constexpr auto create_regex_parser()
     {
         using slice = utils::slice;
         using namespace ftors;
@@ -3332,18 +3300,18 @@ namespace regex
             rules(
                 number(regex_digit_09),
                 number(number, regex_digit_09) >= [](size32_t n, size32_t x){ return n * 10 + x; },
-                primary(regex_digit_09) >= [&b](size32_t number){ return b.primary_char(char(number + '0')); },
-                primary(regex_primary) >= [&b](const auto& s){ return b.primary_subset(s); },
+                primary(regex_digit_09) >>= [](auto& ctx, size32_t number){ return ctx.primary_char(char(number + '0')); },
+                primary(regex_primary) >>= [](auto& ctx, const auto& s){ return ctx.primary_subset(s); },
                 primary('(', expr, ')') >= _e2,
                 q_expr(primary),
-                q_expr(primary, '*') >= [&b](slice s, skip) { return b.star(s); },
-                q_expr(primary, '+') >= [&b](slice s, skip) { return b.plus(s); },
-                q_expr(primary, '?') >= [&b](slice s, skip) { return b.opt(s); },
-                q_expr(primary, '{', number, '}') >= [&b](slice s, skip, size32_t n, skip) { return b.rep(s, n); },
+                q_expr(primary, '*') >>= [](auto& ctx, slice s, skip) { return ctx.star(s); },
+                q_expr(primary, '+') >>= [](auto& ctx, slice s, skip) { return ctx.plus(s); },
+                q_expr(primary, '?') >>= [](auto& ctx, slice s, skip) { return ctx.opt(s); },
+                q_expr(primary, '{', number, '}') >>= [](auto& ctx, slice s, skip, size32_t n, skip) { return ctx.rep(s, n); },
                 concat(q_expr),
-                concat(concat, q_expr) >= [&b](slice s1, slice s2) { return b.cat(s1, s2); },
+                concat(concat, q_expr) >>= [](auto& ctx, slice s1, slice s2) { return ctx.cat(s1, s2); },
                 alt(concat),
-                alt(alt, '|', alt) >= [&b](slice s1, skip, slice s2) { return b.alt(s1, s2); },
+                alt(alt, '|', alt) >>= [](auto& ctx, slice s1, skip, slice s2) { return ctx.alt(s1, s2); },
                 expr(alt)
             ),
             use_lexer<regex_lexer>{}
@@ -3353,11 +3321,12 @@ namespace regex
     template<size_t N>
     constexpr size32_t analyze_dfa_size(const char (&pattern)[N])
     {
-        dfa_size_analyzer a;
-        auto p = create_regex_parser(a);
+        auto p = create_regex_parser();
         buffers::cstring_buffer buffer(pattern);
         utils::no_stream s{};
-        auto res = p.parse(
+        dfa_size_analyzer a;
+        auto res = p.context_parse(
+            a,
             parse_options{}.set_skip_whitespace(false),
             buffer,
             s);
@@ -3366,11 +3335,33 @@ namespace regex
         return res.value().n;
     }
 
+    template<size_t N, size_t PatternSize>
+    constexpr void add_term_data_to_dfa(const regex_pattern_data<PatternSize>& pattern_data, dfa_builder<N>& b, size16_t idx)
+    {
+        using slice = utils::slice;
+        utils::no_stream s{};
+        auto p = create_regex_parser();
+        std::optional<slice> res = p.context_parse(
+            b,
+            parse_options{}.set_skip_whitespace(false),
+            buffers::cstring_buffer(pattern_data.pattern),
+            s
+        );
+
+        if (res.has_value())
+        {
+            slice prev{0, size32_t(b.size())};
+            b.mark_end_states(res.value(), idx);
+            b.alt(prev, res.value());
+        }
+        else
+            throw std::runtime_error("Regex parse error");
+    }
+
     template<typename Stream>
     constexpr void write_regex_parser_diag_msg(Stream& s)
     {
-        regex::dfa_size_analyzer a;
-        auto p = regex::create_regex_parser(a);
+        auto p = create_regex_parser();
         p.write_diag_str(s);
     }
 
@@ -3383,9 +3374,10 @@ namespace regex
         constexpr expr()
         {
             dfa_builder<dfa_size> b(sm);
-            auto p = create_regex_parser(b);
+            auto p = create_regex_parser();
             utils::no_stream stream{};
-            auto s = p.parse(
+            auto s = p.context_parse(
+                b,
                 parse_options{}.set_skip_whitespace(false),
                 buffers::cstring_buffer(Pattern),
                 stream
@@ -3396,11 +3388,12 @@ namespace regex
         }
 
         template<typename Stream>
-        constexpr void debug_parse(Stream& s) const
+        constexpr static void debug_parse(Stream& s)
         {
             regex::dfa_size_analyzer a;
-            auto p = regex::create_regex_parser(a);
-            p.parse(
+            auto p = create_regex_parser();
+            p.context_parse(
+                a,
                 parse_options{}.set_skip_whitespace(false).set_verbose(),
                 buffers::cstring_buffer(Pattern),
                 s
