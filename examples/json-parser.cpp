@@ -238,6 +238,11 @@ constexpr nterm<js_object_element_type> js_object_element("js_object_element");
 constexpr nterm<js_array_type> js_array("js_array");
 constexpr nterm<js_array_type> js_array_elements("js_array_elements");
 
+struct custom_limits
+{
+    static const size_t state_count_cap = 45;
+    static const size_t max_sit_count_per_state_cap = 30;
+};
 
 constexpr parser js_parser(
     js_object,
@@ -274,7 +279,9 @@ constexpr parser js_parser(
             >= [](auto&& ob, skip, auto&& e) { return add_object_element(std::move(e), std::move(ob)); },
         js_object_element(js_string, ':', js_value)
             >= [](auto k, skip, auto&& v) { return to_object_element(k, std::move(v)); }
-    )
+    ),
+    use_generated_lexer{},
+    custom_limits{}
 );
 
 int main(int argc, char* argv[])
