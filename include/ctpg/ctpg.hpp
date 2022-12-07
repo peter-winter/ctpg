@@ -3278,7 +3278,7 @@ namespace regex
         return cs;
     }
 
-    constexpr auto create_regex_parser()
+    namespace regex_parser
     {
         using slice = utils::slice;
         using namespace ftors;
@@ -3293,7 +3293,7 @@ namespace regex
         constexpr custom_term regex_digit_09("regex_digit_09", [](auto sv) { return size32_t(sv[0]) - '0'; });
         constexpr custom_term regex_primary("regex_primary", string_view_to_subset);
 
-        return parser(
+        constexpr parser regex_parser_object(
             expr,
             terms(regex_digit_09, regex_primary, '*', '+', '?', '|', '(', ')', '{', '}'),
             nterms(expr, alt, concat, q_expr, primary, number),
@@ -3321,11 +3321,10 @@ namespace regex
     template<size_t N>
     constexpr size32_t analyze_dfa_size(const char (&pattern)[N])
     {
-        auto p = create_regex_parser();
         buffers::cstring_buffer buffer(pattern);
         utils::no_stream s{};
         dfa_size_analyzer a;
-        auto res = p.context_parse(
+        auto res = regex_parser::regex_parser_object.context_parse(
             a,
             parse_options{}.set_skip_whitespace(false),
             buffer,
@@ -3340,8 +3339,7 @@ namespace regex
     {
         using slice = utils::slice;
         utils::no_stream s{};
-        auto p = create_regex_parser();
-        std::optional<slice> res = p.context_parse(
+        std::optional<slice> res = regex_parser::regex_parser_object.context_parse(
             b,
             parse_options{}.set_skip_whitespace(false),
             buffers::cstring_buffer(pattern_data.pattern),
@@ -3361,8 +3359,7 @@ namespace regex
     template<typename Stream>
     constexpr void write_regex_parser_diag_msg(Stream& s)
     {
-        auto p = create_regex_parser();
-        p.write_diag_str(s);
+        regex_parser::regex_parser_object.write_diag_str(s);
     }
 
     template<auto& Pattern>
@@ -3374,9 +3371,8 @@ namespace regex
         constexpr expr()
         {
             dfa_builder<dfa_size> b(sm);
-            auto p = create_regex_parser();
             utils::no_stream stream{};
-            auto s = p.context_parse(
+            auto s = regex_parser::regex_parser_object.context_parse(
                 b,
                 parse_options{}.set_skip_whitespace(false),
                 buffers::cstring_buffer(Pattern),
@@ -3391,8 +3387,7 @@ namespace regex
         constexpr static void debug_parse(Stream& s)
         {
             regex::dfa_size_analyzer a;
-            auto p = create_regex_parser();
-            p.context_parse(
+            regex_parser::regex_parser_object.context_parse(
                 a,
                 parse_options{}.set_skip_whitespace(false).set_verbose(),
                 buffers::cstring_buffer(Pattern),
