@@ -259,6 +259,20 @@ namespace stdex
             return N;
         }
 
+        constexpr void add(const cbitset<N>& other)
+        {
+            for (auto i = 0u; i < underlying_count; ++i)
+                data[i] |= other.data[i];
+        }
+
+        constexpr bool operator == (const cbitset<N>& other)
+        {
+            for (auto i = 0u; i < underlying_count; ++i)
+                if (data[i] != other.data[i])
+                    return false;
+            return true;
+        }
+
     private:
         constexpr void check_idx(size_type idx) const
         {
@@ -362,6 +376,12 @@ namespace stdex
 
 namespace utils
 {
+    struct no_stream
+    {
+        template<typename T>
+        constexpr const no_stream& operator <<(T&&) const { return *this; }
+    };
+
     template<typename T, typename... Args>
     constexpr T construct_default(Args...)
     {
@@ -493,6 +513,16 @@ namespace utils
         T operator[](size_t) const { return val; }
         T val;
     };
+
+    constexpr std::string_view pass_sv(const std::string_view& sv)
+    {
+        return sv;
+    }
+
+    constexpr char first_sv_char(const std::string_view& sv)
+    {
+        return sv[0];
+    }
 }
 
 namespace ftors
@@ -840,12 +870,6 @@ protected:
     associativity ass;
 };
 
-namespace detail
-{
-    constexpr std::string_view pass_sv(const std::string_view& sv) { return sv; }
-    constexpr char first_sv_char(const std::string_view& sv) { return sv[0]; }
-}
-
 class char_term : public term
 {
 public:
@@ -865,7 +889,7 @@ public:
     constexpr char get_char() const { return c; }
     constexpr char get_data() const { return c; }
 
-    constexpr const auto& get_ftor() const { return detail::first_sv_char; }
+    constexpr const auto& get_ftor() const { return utils::first_sv_char; }
 
 private:
     char c;
@@ -890,7 +914,7 @@ public:
     constexpr const char* get_name() const { return get_id(); }
     constexpr const auto& get_data() const { return data; }
 
-    constexpr const auto& get_ftor() const { return detail::pass_sv; }
+    constexpr const auto& get_ftor() const { return utils::pass_sv; }
 
 private:
     char data[DataSize] = {};
@@ -1005,15 +1029,6 @@ struct match_options
     bool verbose = false;
     constexpr match_options& set_verbose(bool val = true) { verbose = val; return *this; }
 };
-
-namespace detail
-{
-    struct no_stream
-    {
-        template<typename T>
-        constexpr const no_stream& operator <<(T&&) const { return *this; }
-    };
-}
 
 struct recognized_term
 {
@@ -1395,7 +1410,7 @@ namespace regex
         size16_t idx)
     {
         using slice = utils::slice;
-        detail::no_stream s{};
+        utils::no_stream s{};
         std::optional<slice> res = p.parse(
             parse_options{}.set_skip_whitespace(false),
             buffers::cstring_buffer(pattern_data.pattern),
@@ -1438,7 +1453,7 @@ namespace regex
                     error_stream << sp << " REGEX MATCH: Recognized " << rec_idx << "\n";
                 }
             }
-            
+
             if (start == end)
                 break;
 
@@ -1810,16 +1825,6 @@ namespace detail
     using parser_value_stack_type_t = typename parser_value_stack_type<Buffer, EmptyRulesCount, ValueVariantType>::type;
 }
 
-
-namespace detail
-{
-    struct deduce_max_states
-    {
-        template<size_t TermCount, size_t... RuleSizes>
-        static const size_t value = (0 + ... + (RuleSizes + 1)) * TermCount;
-    };
-}
-
 template<typename Lexer>
 struct use_lexer
 {
@@ -1844,6 +1849,7 @@ class parser<
     LexerUsage
 >
 {
+private:
     using term_tuple_type = std::tuple<Terms...>;
     using nterm_tuple_type = std::tuple<NTerms...>;
     using rule_tuple_type = std::tuple<Rules...>;
@@ -1879,7 +1885,9 @@ public:
         analyze_eof();
         analyze_error_recovery_token();
         analyze_rules(std::make_index_sequence<std::tuple_size_v<rule_tuple_type>>{}, grammar_root);
-        analyze_states();
+
+        state_analyzer sa(gi, states, parse_table);
+        state_count = sa.analyze_states();
 
         create_lexer(seq_for_terms);
     }
@@ -1887,14 +1895,14 @@ public:
     template<typename Buffer>
     constexpr std::optional<root_value_type> parse(const Buffer& buffer) const
     {
-        detail::no_stream error_stream;
+        utils::no_stream error_stream;
         return parse(buffer, error_stream);
     }
 
     template<typename Context, typename Buffer>
     constexpr std::optional<root_value_type> context_parse(Context&& ctx, const Buffer& buffer) const
     {
-        detail::no_stream error_stream;
+        utils::no_stream error_stream;
         return context_parse(std::forward<Context>(ctx), buffer, error_stream);
     }
 
@@ -1964,19 +1972,19 @@ public:
 
             if (entry.kind == parse_table_entry_kind::shift)
             {
-                shift(ps, buffer.get_view(ps.current_it, ps.current_end_it), t_idx, entry.shift);
+                shift(ps, buffer.get_view(ps.current_it, ps.current_end_it), t_idx, entry.arg);
                 consume_term(ps);
             }
             else if (entry.kind == parse_table_entry_kind::shift_error_recovery_token)
             {
-                shift_recovery_token(ps, entry.shift);
+                shift_recovery_token(ps, entry.arg);
                 leave_recovery_mode(ps);
                 enter_consume_mode(ps);
             }
             else if (entry.kind == parse_table_entry_kind::reduce)
-                reduce(std::forward<Context>(ctx), ps, entry.reduce);
+                reduce(std::forward<Context>(ctx), ps, entry.arg);
             else if (entry.kind == parse_table_entry_kind::rr_conflict)
-                rr_conflict(std::forward<Context>(ctx), ps, entry.reduce);
+                rr_conflict(std::forward<Context>(ctx), ps, entry.arg);
             else if (entry.kind == parse_table_entry_kind::success)
             {
                 root_value = std::optional(std::move(success(ps)));
@@ -1990,9 +1998,14 @@ public:
     template<typename Stream>
     constexpr void write_diag_str(Stream& s) const
     {
-        s << "PARSER" << "\n" << "\n";
+        s << "PARSER" << "\n\n";
 
-        s << "Parser Object size: " << sizeof(*this) << "\n\nRULES\n\n";
+        s << "Parser object size: " << sizeof(*this) << "\n";
+        s << "Parser max number of states: " << max_states << "\n";
+        s << "Parser number of states: " << state_count << "\n";
+        s << "\n";
+
+        s << "RULES\n\n";
 
         for (size16_t i = 0; i < rule_count; ++i)
         {
@@ -2000,19 +2013,22 @@ public:
             write_rule_diag_str(s, i);
             s << "\n";
         }
+        s << "\n";
 
-        s << "\nSTATES\n\n";
+        s << "STATES\n\n";
         for (size16_t i = 0; i < state_count; ++i)
         {
             write_state_diag_str(s, i);
             s << "\n";
         }
+        s << "\n";
 
         if constexpr (generate_lexer)
         {
-            s << "\n" << "LEXICAL ANALYZER" << "\n" << "\n";
+            s << "LEXICAL ANALYZER" << "\n\n";
             regex::write_dfa_diag_str(lexer_sm, s, term_names);
         }
+        s << "\n";
     }
 
 private:
@@ -2022,12 +2038,14 @@ private:
     static const size_t term_count = sizeof...(Terms) + 2;
     static const size16_t fake_root_idx = sizeof...(NTerms);
     static const size_t nterm_count = sizeof...(NTerms) + 1;
+    static const size_t symbol_count = term_count + nterm_count;
     static const size_t root_rule_idx = sizeof...(Rules);
     static const size_t rule_count = sizeof...(Rules) + 1;
     static const size_t empty_rules_count = meta::count_zeros<Rules::n...>;
     static const size_t situation_size = max_rule_element_count + 1;
     static const size_t situation_address_space_size = rule_count * situation_size * term_count;
-    static const size_t max_states = detail::deduce_max_states::template value<term_count, Rules::n..., 1>;
+    static const size_t situation_count = (0 + ... + (Rules::n + 1)) * term_count + 2;
+    static const size_t max_states = situation_count;
     static const size_t lexer_dfa_size = generate_lexer ? (0 + ... + Terms::dfa_size) : 1;
 
     using value_variant_type = meta::unique_types_variant_t<
@@ -2037,22 +2055,12 @@ private:
         value_type_t<Terms>...
     >;
 
-    using term_subset = stdex::cbitset<term_count>;
-    using nterm_subset = stdex::cbitset<nterm_count>;
-    using right_side_slice_subset = stdex::cbitset<situation_size * rule_count>;
-    using state = stdex::cbitset<situation_address_space_size>;
-    using situation_set = stdex::cbitset<situation_address_space_size>;
-
-    struct situation_queue_entry
+    struct rule_info
     {
-        size16_t state_idx;
-        size32_t idx;
+        size16_t l_idx = uninitialized16;
+        size16_t r_idx = uninitialized16;
+        size16_t r_elements = uninitialized16;
     };
-
-    using situation_queue_t = stdex::cqueue<
-        situation_queue_entry,
-        max_states * max_states
-    >;
 
     struct symbol
     {
@@ -2073,21 +2081,42 @@ private:
         size16_t idx;
     };
 
+    struct grammar_info
+    {
+        symbol right_sides[rule_count][max_rule_element_count] = { };
+        rule_info rule_infos[rule_count] = { };
+        utils::slice nterm_rule_slices[nterm_count] = { };
+        int term_precedences[term_count] = { };
+        associativity term_associativities[term_count] = { };
+        int rule_precedences[rule_count] = { };
+        associativity rule_associativities[rule_count] = { };
+        size16_t rule_last_terms[rule_count] = { };
+    };
+
+    using situation_set = stdex::cbitset<situation_address_space_size>;
+    
     struct situation_info
     {
-        size16_t rule_info_idx;
-        size16_t after;
-        size16_t t;
+        size16_t rule_info_idx = uninitialized16;
+        size16_t after = uninitialized16;
+        size16_t t = uninitialized16;
     };
 
-    struct rule_info
+    constexpr static size32_t make_situation_idx(situation_info info)
     {
-        size16_t l_idx;
-        size16_t r_idx;
-        size16_t r_elements;
-    };
+        return info.rule_info_idx * situation_size * term_count + info.after * term_count + info.t;
+    }
 
-    enum class parse_table_entry_kind : size16_t { error, success, shift, shift_error_recovery_token, reduce, rr_conflict };
+    constexpr static situation_info make_situation_info(size32_t idx)
+    {
+        size16_t t = size16_t(idx % term_count);
+        idx /= term_count;
+        size16_t after = size16_t(idx % situation_size);
+        size16_t rule_info_idx = size16_t(idx / situation_size);
+        return situation_info{ rule_info_idx, after, t };
+    }
+
+    enum class parse_table_entry_kind : size8_t { error, success, shift, shift_error_recovery_token, reduce, rr_conflict };
 
     constexpr static bool is_shift(parse_table_entry_kind kind)
     {
@@ -2097,14 +2126,355 @@ private:
     struct parse_table_entry
     {
         parse_table_entry_kind kind = parse_table_entry_kind::error;
-        size16_t shift = uninitialized16;
-        size16_t reduce = uninitialized16;
+        size16_t arg = uninitialized16;
 
-        bool has_shift = false;
-        bool has_reduce = false;
+        size8_t has_sr_conflict = 0;
+    };
 
-        constexpr void set_shift(size16_t value) { shift = value; has_shift = true; }
-        constexpr void set_reduce(size16_t value) { reduce = value; has_reduce = true; }
+    using lr1_parse_table = parse_table_entry[max_states][symbol_count];
+    using simple_state_table = situation_set[max_states];
+
+    struct state_analyzer
+    {
+        constexpr state_analyzer(const grammar_info& gi, simple_state_table& simple_states, lr1_parse_table& parse_table):
+            gi(gi), simple_states(simple_states), parse_table(parse_table)
+        {}
+
+        using term_subset = stdex::cbitset<term_count>;
+        using nterm_subset = stdex::cbitset<nterm_count>;
+        using right_side_slice_subset = stdex::cbitset<situation_size * rule_count>;
+        using situation_vector = stdex::cvector<size32_t, situation_count>;
+        
+        struct state
+        {
+            situation_vector all_situations_vec = {};
+            situation_set kernel = {};
+            situation_vector situations_by_symbol[symbol_count] = {};
+        };
+
+        using state_table = state[max_states];
+        
+        constexpr bool add_situation(size16_t state_idx, size32_t sit_idx, bool to_kernel)
+        {
+            if (!simple_states[state_idx].test(sit_idx))
+            {
+                simple_states[state_idx].set(sit_idx);
+                states[state_idx].all_situations_vec.push_back(sit_idx);
+                situation_info info = make_situation_info(sit_idx);
+                const rule_info& ri = gi.rule_infos[info.rule_info_idx];
+
+                if (info.after < ri.r_elements)
+                {
+                    const symbol& sm = gi.right_sides[ri.r_idx][info.after];
+                    states[state_idx].situations_by_symbol[sm.get_parse_table_idx()].push_back(sit_idx);
+                }
+                else
+                {
+                    states[state_idx].situations_by_symbol[get_parse_table_idx(true, info.t)].push_back(sit_idx);
+                }
+
+                if (to_kernel)
+                {
+                    states[state_idx].kernel.set(sit_idx);
+                }
+                return true;
+            }
+            return false;
+        }
+
+        constexpr size16_t analyze_states()
+        {
+            situation_info root_situation_info{ root_rule_idx, 0, eof_idx };
+            size32_t root_sit_idx = make_situation_idx(root_situation_info);
+            state_count = 1;
+
+            size16_t current_state = 0;
+            add_situation(current_state, root_sit_idx, true);
+
+            while (current_state < state_count)
+            {
+                state& s = states[current_state];
+                for (auto i = 0u; i < s.all_situations_vec.size(); ++i)
+                {
+                    closure(current_state, s.all_situations_vec[i]);
+                }
+
+                for (size16_t symbol_idx = 0u; symbol_idx < symbol_count; ++symbol_idx)
+                {
+                    transitions(current_state, symbol_idx, s.situations_by_symbol[symbol_idx]);
+                }
+                current_state++;
+            }
+            return state_count;
+        }
+
+        constexpr void closure(size16_t state_idx, size32_t sit_idx)
+        {
+            if (closures_analyzed.test(sit_idx))
+            {
+                for(auto i = 0u; i < closures[sit_idx].size(); ++i)
+                {
+                    add_situation(state_idx, closures[sit_idx][i], false);
+                }
+                return;
+            }
+
+            closures_analyzed.set(sit_idx);
+
+            situation_info info = make_situation_info(sit_idx);
+            const rule_info& ri = gi.rule_infos[info.rule_info_idx];
+            if (info.after >= ri.r_elements)
+                return;
+
+            const symbol& sm = gi.right_sides[ri.r_idx][info.after];
+            if (sm.term)
+                return;
+
+            size16_t nt = sm.idx;
+            bool after_empty = make_right_side_slice_empty(ri, info.after + 1);
+            const utils::slice& sl = gi.nterm_rule_slices[nt];
+
+            const term_subset& first = make_right_side_slice_first(ri, info.after + 1);
+            for (size16_t t = 0; t < term_count; ++t)
+            {
+                if (first.test(t))
+                {
+                    for (auto i = 0u; i < sl.n; ++i)
+                    {
+                        size32_t new_sit_idx = make_situation_idx(situation_info{ size16_t(sl.start + i), 0, t });
+                        if (add_situation(state_idx, new_sit_idx, false))
+                            closures[sit_idx].push_back(new_sit_idx);
+                    }
+                }
+            }
+
+            if (after_empty)
+            {
+                for (auto i = 0u; i < sl.n; ++i)
+                {
+                    size32_t new_sit_idx = make_situation_idx(situation_info{ size16_t(sl.start + i), 0, info.t });
+                    if (add_situation(state_idx, new_sit_idx, false))
+                        closures[sit_idx].push_back(new_sit_idx);
+                }
+            }
+        }
+
+        constexpr void transitions(size16_t state_idx, size16_t symbol_idx, const situation_vector& symbol_situations)
+        {
+            if (symbol_situations.size() == 0)
+                return;
+
+            bool has_reduction = false;
+            bool has_shift = false;
+
+            situation_set kernel;
+            situation_vector kernel_vec;
+            auto& entry = parse_table[state_idx][symbol_idx];
+            size16_t reduction_rule_idx = uninitialized16;
+
+            for (size32_t sit_idx : symbol_situations)
+            {
+                situation_info info = make_situation_info(sit_idx);
+                const rule_info& ri = gi.rule_infos[info.rule_info_idx];
+
+                bool reduction = info.after >= ri.r_elements;
+                if (reduction)
+                {
+                    if (ri.r_idx == root_rule_idx)
+                    {
+                        entry.kind = parse_table_entry_kind::success;
+                        break;
+                    }
+
+                    if (has_reduction)
+                    {
+                        entry.kind = parse_table_entry_kind::rr_conflict;
+                        break;
+                    }
+                    if (has_shift)
+                    {
+                        if (!entry.has_sr_conflict)
+                        {
+                            entry.kind = solve_conflict(info.rule_info_idx, info.t);
+                            entry.has_sr_conflict = true;
+                        }
+                    }
+                    else
+                    {
+                        entry.kind = parse_table_entry_kind::reduce;
+                    }
+                    has_reduction = true;
+                    reduction_rule_idx = info.rule_info_idx;
+                }
+                else
+                {
+                    if (has_reduction)
+                    {
+                        if (!entry.has_sr_conflict)
+                        {
+                            const auto& sm = gi.right_sides[ri.r_idx][info.after];
+                            entry.kind = solve_conflict(reduction_rule_idx, sm.idx);
+                            entry.has_sr_conflict = true;
+                        }
+                    }
+                    else
+                    {
+                        entry.kind = parse_table_entry_kind::shift;
+                    }
+                    has_shift = true;
+                    situation_info new_info = situation_info{ info.rule_info_idx, size16_t(info.after + 1), info.t };
+                    size32_t new_idx = make_situation_idx(new_info);
+                    if (!kernel.test(new_idx))
+                    {
+                        kernel.set(new_idx);
+                        kernel_vec.push_back(new_idx);
+                    }
+                }
+            }
+
+            if (entry.kind == parse_table_entry_kind::shift)
+            {
+                size16_t new_state_idx = uninitialized16;
+                for (size16_t i = 0u; i < state_count; i++)
+                {
+                    if (states[i].kernel == kernel)
+                    {
+                        new_state_idx = i;
+                    }
+                }
+                if (new_state_idx == uninitialized16)
+                {
+                    new_state_idx = state_count++;
+                }
+
+                entry.arg = new_state_idx;
+                if (symbol_idx == get_parse_table_idx(true, error_recovery_token_idx))
+                    entry.kind = parse_table_entry_kind::shift_error_recovery_token;
+
+                for (auto sit_idx : kernel_vec)
+                    add_situation(new_state_idx, sit_idx, true);
+            }
+            else if (entry.kind == parse_table_entry_kind::reduce)
+            {
+                entry.arg = reduction_rule_idx;
+                entry.has_sr_conflict = has_shift ? 1 : 0;
+            }
+        }
+
+        constexpr auto solve_conflict(size16_t rule_info_idx, size16_t term_idx) const
+        {
+            size16_t rule_idx = gi.rule_infos[rule_info_idx].r_idx;
+            int r_p = gi.rule_precedences[rule_idx];
+            int t_p = gi.term_precedences[term_idx];
+            if (r_p > t_p)
+                return parse_table_entry_kind::reduce;
+
+            if (r_p == t_p)
+            {
+                if (gi.rule_associativities[rule_idx] == associativity::ltor)
+                    return parse_table_entry_kind::reduce;
+            }
+            return parse_table_entry_kind::shift;
+        }
+
+        constexpr const term_subset& make_right_side_slice_first(const rule_info& ri, size_t start)
+        {
+            size_t right_side_slice_idx = max_rule_element_count * ri.r_idx + start;
+            auto& res = right_side_slice_first[right_side_slice_idx];
+
+            if (right_side_slice_first_analyzed.test(right_side_slice_idx))
+                return res;
+            right_side_slice_first_analyzed.set(right_side_slice_idx);
+
+            for (size_t i = start; i < ri.r_elements; ++i)
+            {
+                const symbol& s = gi.right_sides[ri.r_idx][i];
+                if (s.term)
+                {
+                    res.set(s.idx);
+                    break;
+                }
+                res.add(make_nterm_first(s.idx));
+                if (!make_nterm_empty(s.idx))
+                    break;
+            }
+            return res;
+        }
+
+        constexpr const term_subset& make_nterm_first(size16_t nt)
+        {
+            if (nterm_first_analyzed.test(nt))
+                return nterm_first[nt];
+            nterm_first_analyzed.set(nt);
+
+            const utils::slice& s = gi.nterm_rule_slices[nt];
+            for (size_t i = 0u; i < s.n; ++i)
+            {
+                const rule_info& ri = gi.rule_infos[s.start + i];
+                nterm_first[nt].add(make_right_side_slice_first(ri, 0));
+            }
+            return nterm_first[nt];
+        }
+
+        constexpr bool make_right_side_slice_empty(const rule_info& ri, size_t start)
+        {
+            auto idx = ri.r_idx * situation_size + start;
+            if (right_side_slice_empty_analyzed.test(idx))
+                return right_side_slice_empty.test(idx);
+
+            right_side_slice_empty_analyzed.set(idx);
+            for (size_t i = start; i < ri.r_elements; ++i)
+            {
+                const symbol& s = gi.right_sides[ri.r_idx][i];
+                if (s.term)
+                    return false;
+                if (!make_nterm_empty(s.idx))
+                    return false;
+            }
+            right_side_slice_empty.set(idx);
+            return true;
+        }
+
+        constexpr bool make_right_side_empty(const rule_info& ri)
+        {
+            return make_right_side_slice_empty(ri, 0);
+        }
+
+        constexpr bool make_nterm_empty(size16_t nt)
+        {
+            if (nterm_empty_analyzed.test(nt))
+                return nterm_empty.test(nt);
+            nterm_empty_analyzed.set(nt);
+
+            const utils::slice& s = gi.nterm_rule_slices[nt];
+            for (size_t i = 0u; i < s.n; ++i)
+            {
+                if (make_right_side_empty(gi.rule_infos[s.start + i]))
+                {
+                    return (nterm_empty.set(nt), true);
+                }
+            }
+            return (nterm_empty.reset(nt), false);
+        }
+
+        const grammar_info& gi;
+        simple_state_table& simple_states;
+        lr1_parse_table& parse_table;
+
+        state states[max_states] = {};
+
+        size16_t state_count = 0;
+        situation_set closures_analyzed = {};
+        situation_vector closures[situation_address_space_size] = {};
+
+        right_side_slice_subset right_side_slice_empty_analyzed = {};
+        right_side_slice_subset right_side_slice_empty = {};
+        term_subset right_side_slice_first[situation_size * rule_count] = {};
+        right_side_slice_subset right_side_slice_first_analyzed = {};
+        nterm_subset nterm_empty = { };
+        term_subset nterm_first[nterm_count] = { };
+        nterm_subset nterm_empty_analyzed = { };
+        nterm_subset nterm_first_analyzed = { };
     };
 
     constexpr static size16_t get_parse_table_idx(bool term, size16_t idx)
@@ -2116,23 +2486,23 @@ private:
     {
         term_names[eof_idx] = detail::eof::get_name();
         term_ids[eof_idx] = detail::eof::get_name();
-        term_precedences[eof_idx] = 0;
-        term_associativities[eof_idx] = associativity::no_assoc;
+        gi.term_precedences[eof_idx] = 0;
+        gi.term_associativities[eof_idx] = associativity::no_assoc;
     }
 
     constexpr void analyze_error_recovery_token()
     {
         term_names[error_recovery_token_idx] = error_recovery_token::get_name();
         term_ids[error_recovery_token_idx] = error_recovery_token::get_name();
-        term_precedences[error_recovery_token_idx] = 0;
-        term_associativities[error_recovery_token_idx] = associativity::no_assoc;
+        gi.term_precedences[error_recovery_token_idx] = 0;
+        gi.term_associativities[error_recovery_token_idx] = associativity::no_assoc;
     }
 
     template<size16_t TermIdx, typename Term>
     constexpr void analyze_term(const Term& t)
     {
-        term_precedences[TermIdx] = t.get_precedence();
-        term_associativities[TermIdx] = t.get_associativity();
+        gi.term_precedences[TermIdx] = t.get_precedence();
+        gi.term_associativities[TermIdx] = t.get_associativity();
         term_names[TermIdx] = t.get_name();
         term_ids[TermIdx] = t.get_id();
         term_ftors[TermIdx] = string_view_to_term_value<TermIdx>;
@@ -2179,7 +2549,7 @@ private:
     {
         (void(analyze_rule<I>(std::get<I>(rule_tuple), std::make_index_sequence<Rules::n>{})), ...);
         analyze_rule<root_rule_idx>(detail::fake_root<value_type_t<root_nterm_type>>{}(root), std::index_sequence<0>{});
-        stdex::sort(rule_infos, [](const auto& ri1, const auto& ri2) { return ri1.l_idx < ri2.l_idx; });
+        stdex::sort(gi.rule_infos, [](const auto& ri1, const auto& ri2) { return ri1.l_idx < ri2.l_idx; });
         make_nterm_rule_slices();
     }
 
@@ -2188,14 +2558,14 @@ private:
         size16_t nt = 0;
         for (size16_t i = 0u; i < rule_count; ++i)
         {
-            if (nt != rule_infos[i].l_idx)
+            if (nt != gi.rule_infos[i].l_idx)
             {
-                nt = rule_infos[i].l_idx;
-                nterm_rule_slices[nt].start = i;
-                nterm_rule_slices[nt].n = 1;
+                nt = gi.rule_infos[i].l_idx;
+                gi.nterm_rule_slices[nt].start = i;
+                gi.nterm_rule_slices[nt].n = 1;
             }
             else
-                nterm_rule_slices[nt].n++;
+                gi.nterm_rule_slices[nt].n++;
         }
     }
 
@@ -2203,10 +2573,9 @@ private:
     {
         for (int i = int(rule_size - 1); i >= 0; --i)
         {
-            const auto& s = right_sides[rule_idx][i];
-            if (!s.term)
-                continue;
-            return s.idx;
+            const auto& s = gi.right_sides[rule_idx][i];
+            if (s.term)
+                return s.idx;
         }
         return uninitialized16;
     }
@@ -2215,17 +2584,17 @@ private:
     {
         if (precedence != 0)
             return precedence;
-        size16_t last_term_idx = rule_last_terms[rule_idx];
+        size16_t last_term_idx = gi.rule_last_terms[rule_idx];
         if (last_term_idx != uninitialized16)
-            return term_precedences[last_term_idx];
+            return gi.term_precedences[last_term_idx];
         return 0;
     }
 
     constexpr associativity calculate_rule_associativity(size16_t rule_idx) const
     {
-        size16_t last_term_idx = rule_last_terms[rule_idx];
+        size16_t last_term_idx = gi.rule_last_terms[rule_idx];
         if (last_term_idx != uninitialized16)
-            return term_associativities[last_term_idx];
+            return gi.term_associativities[last_term_idx];
         return associativity::no_assoc;
     }
 
@@ -2233,290 +2602,12 @@ private:
     constexpr void analyze_rule(const detail::rule<RequiresContext, F, L, R...>& r, std::index_sequence<I...>)
     {
         size16_t l_idx = size16_t(utils::find_str(nterm_names, r.get_l().get_name()));
-        (void(right_sides[Nr][I] = make_symbol(std::get<I>(r.get_r()))), ...);
+        (void(gi.right_sides[Nr][I] = make_symbol(std::get<I>(r.get_r()))), ...);
         constexpr size16_t rule_elements_count = size16_t(sizeof...(R));
-        rule_infos[Nr] = { l_idx, size16_t(Nr), rule_elements_count };
-        rule_last_terms[Nr] = calculate_rule_last_term(Nr, rule_elements_count);
-        rule_precedences[Nr] = calculate_rule_precedence(r.get_precedence(), Nr);
-        rule_associativities[Nr] = calculate_rule_associativity(Nr);
-    }
-
-    struct state_analyze_info
-    {
-        situation_queue_t situation_queue = { };
-        stdex::cvector<size32_t, situation_address_space_size> closures[situation_address_space_size] = {};
-        stdex::cbitset<situation_address_space_size> done_closures = {};
-        term_subset situation_first_after[situation_address_space_size] = { };
-        situation_set situation_first_after_analyzed = {};
-        term_subset right_side_slice_first[situation_size * rule_count] = {};
-        right_side_slice_subset right_side_slice_first_analyzed = {};
-        nterm_subset nterm_empty = { };
-        term_subset nterm_first[nterm_count] = { };
-        nterm_subset nterm_empty_analyzed = { };
-        nterm_subset nterm_first_analyzed = { };
-    };
-
-    constexpr size32_t make_situation_idx(situation_info a) const
-    {
-        return a.rule_info_idx * situation_size * term_count + a.after * term_count + a.t;
-    }
-
-    constexpr situation_info make_situation_info(size32_t idx) const
-    {
-        size16_t t = size16_t(idx % term_count);
-        idx /= term_count;
-        size16_t after = size16_t(idx % situation_size);
-        size16_t rule_info_idx = size16_t(idx / situation_size);
-        return situation_info{ rule_info_idx, after, t };
-    }
-
-    constexpr void add_term_subset(term_subset& dest, const term_subset& source)
-    {
-        for (size_t i = 0u; i < term_count; ++i)
-            dest.set(i, dest.test(i) || source.test(i));
-    }
-
-    constexpr const term_subset& make_right_side_slice_first(const rule_info& ri, size_t start, state_analyze_info& sai)
-    {
-        size_t right_side_slice_idx = max_rule_element_count * ri.r_idx + start;
-        auto& res = sai.right_side_slice_first[right_side_slice_idx];
-
-        if (sai.right_side_slice_first_analyzed.test(right_side_slice_idx))
-            return res;
-        sai.right_side_slice_first_analyzed.set(right_side_slice_idx);
-
-        for (size_t i = start; i < ri.r_elements; ++i)
-        {
-            const symbol& s = right_sides[ri.r_idx][i];
-            if (s.term)
-            {
-                res.set(s.idx);
-                break;
-            }
-            add_term_subset(res, make_nterm_first(s.idx, sai));
-            if (!make_nterm_empty(s.idx, sai))
-                break;
-        }
-        return res;
-    }
-
-    constexpr const term_subset& make_nterm_first(size16_t nt, state_analyze_info& sai)
-    {
-        if (sai.nterm_first_analyzed.test(nt))
-            return sai.nterm_first[nt];
-        sai.nterm_first_analyzed.set(nt);
-
-        const utils::slice& s = nterm_rule_slices[nt];
-        for (size_t i = 0u; i < s.n; ++i)
-        {
-            const rule_info& ri = rule_infos[s.start + i];
-            add_term_subset(sai.nterm_first[nt], make_right_side_slice_first(ri, 0, sai));
-        }
-        return sai.nterm_first[nt];
-    }
-
-    constexpr bool is_right_side_slice_empty(const rule_info& ri, size_t start, state_analyze_info& sai)
-    {
-        for (size_t i = start; i < ri.r_elements; ++i)
-        {
-            const symbol& s = right_sides[ri.r_idx][i];
-            if (s.term)
-                return false;
-            if (!make_nterm_empty(s.idx, sai))
-                return false;
-        }
-        return true;
-    }
-
-    constexpr bool is_right_side_empty(const rule_info& ri, state_analyze_info& sai)
-    {
-        return is_right_side_slice_empty(ri, 0, sai);
-    }
-
-    constexpr bool make_nterm_empty(size16_t nt, state_analyze_info& sai)
-    {
-        if (sai.nterm_empty_analyzed.test(nt))
-            return sai.nterm_empty.test(nt);
-        sai.nterm_empty_analyzed.set(nt);
-
-        const utils::slice& s = nterm_rule_slices[nt];
-        for (size_t i = 0u; i < s.n; ++i)
-        {
-            if (is_right_side_empty(rule_infos[s.start + i], sai))
-            {
-                return (sai.nterm_empty.set(nt), true);
-            }
-        }
-        return (sai.nterm_empty.reset(nt), false);
-    }
-
-    constexpr const term_subset& make_situation_first_after(const situation_info& addr, size32_t idx, state_analyze_info& sai)
-    {
-        if (sai.situation_first_after_analyzed.test(idx))
-            return sai.situation_first_after[idx];
-        sai.situation_first_after_analyzed.set(idx);
-
-        const rule_info& ri = rule_infos[addr.rule_info_idx];
-        add_term_subset(sai.situation_first_after[idx], make_right_side_slice_first(ri, addr.after + 1, sai));
-        if (is_right_side_slice_empty(ri, addr.after + 1, sai))
-            sai.situation_first_after[idx].set(addr.t);
-        return sai.situation_first_after[idx];
-    }
-
-    constexpr void analyze_states()
-    {
-        situation_info root_situation_info{ root_rule_idx, 0, eof_idx };
-        size32_t idx = make_situation_idx(root_situation_info);
-        state_count = 1;
-
-        state_analyze_info sai;
-
-        add_situation_to_state(0, idx, sai);
-
-        while (!sai.situation_queue.empty())
-        {
-            const auto& entry = sai.situation_queue.top();
-            sai.situation_queue.pop();
-
-            situation_closure(entry.state_idx, entry.idx, sai);
-            situation_transition(entry.state_idx, entry.idx, sai);
-        }
-    }
-
-    constexpr void add_situation_to_state(size16_t state_idx, size32_t idx, state_analyze_info& sai)
-    {
-        state& s = states[state_idx];
-        if (!s.test(idx))
-        {
-            s.set(idx);
-            sai.situation_queue.push({ state_idx, idx });
-        }
-    }
-
-    constexpr void situation_closure(size16_t state_idx, size32_t idx, state_analyze_info& sai)
-    {
-        if (sai.done_closures.test(idx))
-        {
-            for(auto i = 0u; i < sai.closures[idx].size(); ++i)
-            {
-                add_situation_to_state(state_idx, sai.closures[idx][i], sai);
-            }
-            return;
-        }
-
-        sai.done_closures.set(idx);
-
-        situation_info addr = make_situation_info(idx);
-        const rule_info& ri = rule_infos[addr.rule_info_idx];
-        if (addr.after >= ri.r_elements)
-            return;
-
-        const symbol& s = right_sides[ri.r_idx][addr.after];
-        if (!s.term)
-        {
-            size16_t nt = s.idx;
-            const term_subset& first = make_situation_first_after(addr, idx, sai);
-            const utils::slice& sl = nterm_rule_slices[nt];
-            for (auto i = 0u; i < sl.n; ++i)
-            {
-                for (size16_t t = 0; t < term_count; ++t)
-                {
-                    if (first.test(t))
-                    {
-                        size32_t new_s_idx = make_situation_idx(situation_info{ size16_t(sl.start + i), 0, t });
-                        add_situation_to_state(state_idx, new_s_idx, sai);
-                        sai.closures[idx].push_back(new_s_idx);
-                    }
-                }
-            }
-        }
-    }
-
-    constexpr auto solve_conflict(size16_t rule_info_idx, size16_t term_idx) const
-    {
-        size16_t rule_idx = rule_infos[rule_info_idx].r_idx;
-        int r_p = rule_precedences[rule_idx];
-        int t_p = term_precedences[term_idx];
-        if (r_p > t_p)
-            return parse_table_entry_kind::reduce;
-
-        if (r_p == t_p)
-        {
-            if (rule_associativities[rule_idx] == associativity::ltor)
-                return parse_table_entry_kind::reduce;
-        }
-        return parse_table_entry_kind::shift;
-    }
-
-    constexpr void situation_transition(size16_t state_idx, size32_t idx, state_analyze_info& sai)
-    {
-        situation_info addr = make_situation_info(idx);
-        const rule_info& ri = rule_infos[addr.rule_info_idx];
-        bool reduction = addr.after >= ri.r_elements;
-
-        const auto& s = right_sides[ri.r_idx][addr.after];
-        size16_t symbol_idx = reduction ? get_parse_table_idx(true, addr.t) : s.get_parse_table_idx();
-        auto& entry = parse_table[state_idx][symbol_idx];
-        if (reduction)
-        {
-            if (ri.r_idx == root_rule_idx)
-            {
-                entry.kind = parse_table_entry_kind::success;
-            }
-            else if (entry.has_shift)
-            {
-                entry.kind = solve_conflict(addr.rule_info_idx, addr.t);
-            }
-            else if (entry.has_reduce)
-            {
-                entry.kind = parse_table_entry_kind::rr_conflict;
-            }
-            else
-            {
-                entry.kind = parse_table_entry_kind::reduce;
-            }
-            entry.set_reduce(size16_t(addr.rule_info_idx));
-            return;
-        }
-
-        situation_info new_addr = situation_info{ addr.rule_info_idx, size16_t(addr.after + 1), addr.t };
-        size32_t new_idx = make_situation_idx(new_addr);
-
-        if (entry.has_shift)
-        {
-            add_situation_to_state(entry.shift, new_idx, sai);
-            return;
-        }
-
-        size16_t new_state_idx = uninitialized16;
-        for (size16_t i = 0; i < state_count; ++i)
-        {
-            if (states[i].test(new_idx))
-            {
-                new_state_idx = i;
-                break;
-            }
-        }
-        if (new_state_idx == uninitialized16)
-        {
-            new_state_idx = state_count;
-            ++state_count;
-        }
-
-        if (entry.has_reduce)
-        {
-            entry.kind = solve_conflict(entry.reduce, s.idx);
-        }
-        else
-        {
-            entry.kind = parse_table_entry_kind::shift;
-        };
-        entry.set_shift(new_state_idx);
-
-        if (entry.kind == parse_table_entry_kind::shift && s.idx == error_recovery_token_idx)
-            entry.kind = parse_table_entry_kind::shift_error_recovery_token;
-
-        add_situation_to_state(new_state_idx, new_idx, sai);
+        gi.rule_infos[Nr] = { l_idx, size16_t(Nr), rule_elements_count };
+        gi.rule_last_terms[Nr] = calculate_rule_last_term(Nr, rule_elements_count);
+        gi.rule_precedences[Nr] = calculate_rule_precedence(r.get_precedence(), Nr);
+        gi.rule_associativities[Nr] = calculate_rule_associativity(Nr);
     }
 
     constexpr const char* get_symbol_name(const symbol& s) const
@@ -2527,15 +2618,15 @@ private:
     template<typename Stream>
     constexpr void write_rule_diag_str(Stream& s, size16_t rule_info_idx) const
     {
-        const rule_info& ri = rule_infos[rule_info_idx];
+        const rule_info& ri = gi.rule_infos[rule_info_idx];
         s << nterm_names[ri.l_idx] << " <- ";
         if (ri.r_elements > 0)
-            s << get_symbol_name(right_sides[ri.r_idx][0]);
+            s << get_symbol_name(gi.right_sides[ri.r_idx][0]);
         if constexpr (max_rule_element_count > 1)
         {
             for (size_t i = 1u; i < ri.r_elements; ++i)
             {
-                s << " " << get_symbol_name(right_sides[ri.r_idx][i]);
+                s << " " << get_symbol_name(gi.right_sides[ri.r_idx][i]);
             }
         }
     }
@@ -2543,19 +2634,19 @@ private:
     template<typename Stream>
     constexpr void write_situation_diag_str(Stream& s, size32_t idx) const
     {
-        const situation_info addr = make_situation_info(idx);
-        const rule_info& ri = rule_infos[addr.rule_info_idx];
+        const situation_info info = make_situation_info(idx);
+        const rule_info& ri = gi.rule_infos[info.rule_info_idx];
         s << nterm_names[ri.l_idx] << " <- ";
-        for (size_t i = 0u; i < addr.after; ++i)
+        for (size_t i = 0u; i < info.after; ++i)
         {
-            s << get_symbol_name(right_sides[ri.r_idx][i]) << " ";
+            s << get_symbol_name(gi.right_sides[ri.r_idx][i]) << " ";
         }
         s << ". ";
-        for (size_t i = addr.after; i < ri.r_elements; ++i)
+        for (size_t i = info.after; i < ri.r_elements; ++i)
         {
-            s << get_symbol_name(right_sides[ri.r_idx][i]) << " ";
+            s << get_symbol_name(gi.right_sides[ri.r_idx][i]) << " ";
         }
-        s << "==> " << term_names[addr.t];
+        s << "==> " << term_names[info.t];
     }
 
     template<typename Stream>
@@ -2578,7 +2669,7 @@ private:
         {
             const auto& entry = parse_table[idx][i];
             if (is_shift(entry.kind))
-                s << "On " << nterm_names[i] << " go to " << entry.shift << "\n";
+                s << "On " << nterm_names[i] << " go to " << entry.arg << "\n";
         }
         for (size_t i = nterm_count; i < nterm_count + term_count; ++i)
         {
@@ -2590,14 +2681,14 @@ private:
             s << "On " << term_names[term_idx];
             if (entry.kind == parse_table_entry_kind::success)
                 s << " success \n";
-            else if (entry.kind == parse_table_entry_kind::reduce && entry.has_shift)
-                s << " shift to " << entry.shift << " S/R CONFLICT, prefer reduce(" << rule_infos[entry.reduce].r_idx << ") over shift\n";
-            else if (is_shift(entry.kind) && entry.has_reduce)
-                s << " shift to " << entry.shift << " S/R CONFLICT, prefer shift over reduce(" << rule_infos[entry.reduce].r_idx << ")\n";
+            else if (entry.kind == parse_table_entry_kind::reduce && entry.has_sr_conflict)
+                s << " S/R CONFLICT, prefer reduce(" << gi.rule_infos[entry.arg].r_idx << ") over shift\n";
+            else if (is_shift(entry.kind) && entry.has_sr_conflict)
+                s << " S/R CONFLICT, prefer shift over reduce(" << gi.rule_infos[entry.arg].r_idx << ")\n";
             else if (is_shift(entry.kind))
-                s << " shift to " << entry.shift << "\n";
+                s << " shift to " << entry.arg << "\n";
             else if (entry.kind == parse_table_entry_kind::reduce)
-                s << " reduce using (" << rule_infos[entry.reduce].r_idx << ")\n";
+                s << " reduce using (" << gi.rule_infos[entry.arg].r_idx << ")\n";
             else if (entry.kind == parse_table_entry_kind::rr_conflict)
                 s << " R/R CONFLICT - !!! FIX IT !!! \n";
         }
@@ -2635,7 +2726,7 @@ private:
     template<typename Context, typename ParseState>
     constexpr void reduce(Context&& ctx, ParseState& ps, size16_t rule_info_idx) const
     {
-        const auto& ri = rule_infos[rule_info_idx];
+        const auto& ri = gi.rule_infos[rule_info_idx];
         if (ps.options.verbose)
         {
             ps.error_stream << ps.current_sp << " PARSE: Reduced using rule " << ri.r_idx << "  ";
@@ -2644,7 +2735,7 @@ private:
         }
 
         ps.cursor_stack.erase(ps.cursor_stack.end() - ri.r_elements, ps.cursor_stack.end());
-        size16_t new_cursor_value = parse_table[ps.cursor_stack.back()][ri.l_idx].shift;
+        size16_t new_cursor_value = parse_table[ps.cursor_stack.back()][ri.l_idx].arg;
 
         if (ps.options.verbose)
         {
@@ -2876,20 +2967,16 @@ private:
         }
     }
 
-    str_table<term_count> term_names = { };
-    str_table<term_count> term_ids = { };
-    str_table<nterm_count> nterm_names = { };
-    symbol right_sides[rule_count][max_rule_element_count] = { };
-    rule_info rule_infos[rule_count] = { };
-    utils::slice nterm_rule_slices[nterm_count] = { };
-    state states[max_states] = { };
-    parse_table_entry parse_table[max_states][term_count + nterm_count] = {};
+    str_table<term_count> term_names = {};
+    str_table<term_count> term_ids = {};
+    str_table<nterm_count> nterm_names = {};
+    grammar_info gi = {};
+
+    simple_state_table states;
+    lr1_parse_table parse_table = {};
+
     size16_t state_count = 0;
-    int term_precedences[term_count] = { };
-    associativity term_associativities[term_count] = { };
-    int rule_precedences[rule_count] = { };
-    associativity rule_associativities[rule_count] = { };
-    size16_t rule_last_terms[rule_count] = { };
+
     term_tuple_type term_tuple;
     nterm_tuple_type nterm_tuple;
     rule_tuple_type rule_tuple;
@@ -3269,7 +3356,7 @@ namespace regex
         dfa_size_analyzer a;
         auto p = create_regex_parser(a);
         buffers::cstring_buffer buffer(pattern);
-        detail::no_stream s{};
+        utils::no_stream s{};
         auto res = p.parse(
             parse_options{}.set_skip_whitespace(false),
             buffer,
@@ -3297,7 +3384,7 @@ namespace regex
         {
             dfa_builder<dfa_size> b(sm);
             auto p = create_regex_parser(b);
-            detail::no_stream stream{};
+            utils::no_stream stream{};
             auto s = p.parse(
                 parse_options{}.set_skip_whitespace(false),
                 buffers::cstring_buffer(Pattern),
@@ -3329,7 +3416,7 @@ namespace regex
         template<typename Buffer>
         constexpr bool match(const Buffer& buf) const
         {
-            detail::no_stream s;
+            utils::no_stream s;
             return match(buf, s);
         }
 
@@ -3399,7 +3486,7 @@ public:
     constexpr const char* get_id() const { return id; }
     constexpr auto get_data() const { return regex::regex_pattern_data<pattern_size>{ Pattern }; }
 
-    constexpr const auto& get_ftor() const { return detail::pass_sv; }
+    constexpr const auto& get_ftor() const { return utils::pass_sv; }
 
 private:
     char id[pattern_size + 2] = {};
