@@ -38,6 +38,7 @@ All it needs is a C++17 compiler!
    * [Custom lexical analyzer](#custom-lexical-analyzer)
 * [Regular expressions](#regular-expressions)
 * [Diagnostics](#diagnostics)
+* [Resulting binary size](#resulting-binary-size)
 
 ## Installation
 
@@ -1266,11 +1267,12 @@ The output contains 2 sections: one for syntax analyzer starting with the word *
 
 ```
 Parser object size: <number>
-Parser max number of states: <number>
-Parser number of states: <number>
+Number of states: <number>(cap: <number>)
+Max number of situations per state: <number>(cap: <number>)
 ```
 
-The size of the parser object may easily be couple of megabytes for some complex grammars, so consider declaring the parser as a constexpr object rather than on local stack.
+The size of the parser object may be couple of megabytes for some complex grammars, so consider declaring the parser as a constexpr object rather than on local stack.
+You may also consider looking at [how to reduce the executable binary size](#resulting-binary-size).
 
 Next, there is a rule set description in form of:
 
@@ -1353,3 +1355,46 @@ STATE <nr> (unreachable)
 ```
 
 These are leftovers from the regular expression to DFA conversion, just ignore them.
+
+## Resulting binary size
+
+When creating parser for big grammar you may notice the rather big compiled executable binary size.
+This is because the LR1 table creation algorithm needs to predict various size caps of different collections (max number of states, max number of situations in state).
+It does that by 'prefer safe over perfect' approach, so it overshoots significantly most of the time.
+
+To address this print out the disgnostic message and see if this is not the case:
+
+```
+PARSER
+
+Parser object size: 509800
+Number of states: 89(cap: 2500)
+Max number of situations per state: 490(cap: 2500)
+```
+
+If you see numbers significantly lower then the caps, this is the case of an overshoot.
+
+There is a way to address it: 
+
+```c++
+
+struct custom_limits
+{
+    static const ctpg::size_t state_count_cap = 45;
+    static const ctpg::size_t max_sit_count_per_state_cap = 30;
+};
+
+constexpr parser p(
+    list,
+    terms(...),
+    nterms(...),
+    rules(...),
+    use_generated_lexer{},
+    custom_limits{}
+);
+```
+
+Using the 6th argument to ```parser``` definition provide a custom limits structure with ```state_count_cap``` and 
+```max_sit_count_per_state_cap``` defined as ```static const ctpg::size_t```.
+The values have to be bigger than what comes out of the diagnostic message. This way you set the lower caps, decreasing the binary size assuring the actual numbers 
+don't exceed the caps.

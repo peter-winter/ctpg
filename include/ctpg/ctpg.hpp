@@ -2364,6 +2364,8 @@ private:
                 if (new_state_idx == uninitialized16)
                 {
                     new_state_idx = state_count++;
+                    if (state_count > state_count_cap)
+                        throw std::runtime_error("State count exceeds the cap");
                 }
 
                 entry.arg = new_state_idx;
