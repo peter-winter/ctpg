@@ -22,23 +22,20 @@ foreach (example IN LISTS examples)
     add_executable(${example} ${example}.cpp)
     target_link_libraries(${example} PRIVATE ctpg::ctpg)
     if (CTPG_WARNING_FLAGS)
-        if (MSVC)
-            target_compile_options(
-                ${example}
-                PRIVATE
-                /W4 /WX
+        if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+            target_compile_options(${example} PRIVATE /W4 /WX 
                 /wd4459  # declaration of 'identifier' hides global declaration
             )
         else ()
             target_compile_options(${example} PRIVATE -Wall -Wextra -pedantic -Werror)
         endif ()
     endif ()
-    if (MSVC)
-        target_compile_options(
-            ${example}
-            PRIVATE
-            /EHsc
-            /constexpr:steps100000000
-        )
-    endif ()
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(${example} PRIVATE -fconstexpr-steps=1000000000)
+    elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(${example} PRIVATE -fconstexpr-ops-limit=1000000000)
+    elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(${example} PRIVATE /EHsc /constexpr:steps1000000000)
+    endif()
+    
 endforeach ()
