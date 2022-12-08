@@ -1812,17 +1812,35 @@ struct use_generated_lexer
     using type = no_type;
 };
 
-template<typename Root, typename Terms, typename NTerms, typename Rules, typename LexerUsage>
+struct default_limits
+{};
+
+template<typename T, size_t SituationCount>
+struct get_limits
+{
+    static const size_t state_count_cap = T::state_count_cap;
+    static const size_t max_sit_count_per_state_cap = T::max_sit_count_per_state_cap;    
+};
+
+template<size_t SituationCount>
+struct get_limits<default_limits, SituationCount>
+{
+    static const size_t state_count_cap = SituationCount;
+    static const size_t max_sit_count_per_state_cap = SituationCount;
+};
+
+template<typename Root, typename Terms, typename NTerms, typename Rules, typename LexerUsage, typename Limits>
 class parser
 {};
 
-template<typename RootValueType, typename... Terms, typename... NTerms, typename... Rules, typename LexerUsage>
+template<typename RootValueType, typename... Terms, typename... NTerms, typename... Rules, typename LexerUsage, typename Limits>
 class parser<
     nterm<RootValueType>,
     std::tuple<Terms...>,
     std::tuple<NTerms...>,
     std::tuple<Rules...>,
-    LexerUsage
+    LexerUsage,
+    Limits
 >
 {
 private:
@@ -1836,6 +1854,16 @@ private:
     using lexer_type = typename LexerUsage::type;
 
 public:
+    constexpr parser(
+        root_nterm_type grammar_root,
+        term_tuple_type terms,
+        nterm_tuple_type nterms,
+        rule_tuple_type&& rules,
+        LexerUsage,
+        Limits):
+        parser(grammar_root, terms, nterms, std::move(rules))
+    {}
+
     constexpr parser(
         root_nterm_type grammar_root,
         term_tuple_type terms,
@@ -1977,8 +2005,20 @@ public:
         s << "PARSER" << "\n\n";
 
         s << "Parser object size: " << sizeof(*this) << "\n";
-        s << "Parser max number of states: " << max_states << "\n";
-        s << "Parser number of states: " << state_count << "\n";
+        s << "Number of states: " << state_count << "(cap: " << state_count_cap << ")\n";
+
+        size_t max_sit_count_per_state = 0;
+        for (size16_t i = 0; i < state_count; ++i)
+        {
+            size_t count = 0;
+            for (size32_t j = 0u; j < situation_address_space_size; ++j)
+            {
+                if (states[i].test(j))
+                    count++;
+            }
+            max_sit_count_per_state = std::max(max_sit_count_per_state, count);
+        }
+        s << "Max number of situations per state: " << max_sit_count_per_state  << "(cap: " << max_sit_count_per_state_cap << ")\n";
         s << "\n";
 
         s << "RULES\n\n";
@@ -2021,7 +2061,10 @@ private:
     static const size_t situation_size = max_rule_element_count + 1;
     static const size_t situation_address_space_size = rule_count * situation_size * term_count;
     static const size_t situation_count = (0 + ... + (Rules::n + 1)) * term_count + 2;
-    static const size_t max_states = situation_count;
+        
+    static const size_t state_count_cap = get_limits<Limits, situation_count>::state_count_cap;
+    static const size_t max_sit_count_per_state_cap = get_limits<Limits, situation_count>::max_sit_count_per_state_cap;
+    
     static const size_t lexer_dfa_size = generate_lexer ? (0 + ... + Terms::dfa_size) : 1;
 
     using value_variant_type = meta::unique_types_variant_t<
@@ -2107,8 +2150,8 @@ private:
         size8_t has_sr_conflict = 0;
     };
 
-    using lr1_parse_table = parse_table_entry[max_states][symbol_count];
-    using simple_state_table = situation_set[max_states];
+    using lr1_parse_table = parse_table_entry[state_count_cap][symbol_count];
+    using simple_state_table = situation_set[state_count_cap];
 
     struct state_analyzer
     {
@@ -2119,7 +2162,7 @@ private:
         using term_subset = stdex::cbitset<term_count>;
         using nterm_subset = stdex::cbitset<nterm_count>;
         using right_side_slice_subset = stdex::cbitset<situation_size * rule_count>;
-        using situation_vector = stdex::cvector<size32_t, situation_count>;
+        using situation_vector = stdex::cvector<size32_t, max_sit_count_per_state_cap>;
         
         struct state
         {
@@ -2128,7 +2171,7 @@ private:
             situation_vector situations_by_symbol[symbol_count] = {};
         };
 
-        using state_table = state[max_states];
+        using state_table = state[state_count_cap];
         
         constexpr bool add_situation(size16_t state_idx, size32_t sit_idx, bool to_kernel)
         {
@@ -2321,6 +2364,8 @@ private:
                 if (new_state_idx == uninitialized16)
                 {
                     new_state_idx = state_count++;
+                    if (state_count > state_count_cap)
+                        throw std::runtime_error("State count exceeds the cap");
                 }
 
                 entry.arg = new_state_idx;
@@ -2437,7 +2482,7 @@ private:
         simple_state_table& simple_states;
         lr1_parse_table& parse_table;
 
-        state states[max_states] = {};
+        state states[state_count_cap] = {};
 
         size16_t state_count = 0;
         situation_set closures_analyzed = {};
@@ -2958,10 +3003,13 @@ private:
 };
 
 template<typename Root, typename Terms, typename NTerms, typename Rules>
-parser(Root, Terms, NTerms, Rules&&) -> parser<Root, Terms, NTerms, Rules, use_generated_lexer>;
+parser(Root, Terms, NTerms, Rules&&) -> parser<Root, Terms, NTerms, Rules, use_generated_lexer, default_limits>;
 
 template<typename Root, typename Terms, typename NTerms, typename Rules, typename LexerUsage>
-parser(Root, Terms, NTerms, Rules&&, LexerUsage) -> parser<Root, Terms, NTerms, Rules, LexerUsage>;
+parser(Root, Terms, NTerms, Rules&&, LexerUsage) -> parser<Root, Terms, NTerms, Rules, LexerUsage, default_limits>;
+
+template<typename Root, typename Terms, typename NTerms, typename Rules, typename LexerUsage, typename Limits>
+parser(Root, Terms, NTerms, Rules&&, LexerUsage, Limits) -> parser<Root, Terms, NTerms, Rules, LexerUsage, Limits>;
 
 template<typename... Terms>
 constexpr auto terms(const Terms&... terms)
