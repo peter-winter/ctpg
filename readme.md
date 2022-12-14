@@ -1200,7 +1200,7 @@ class int_lexer
 {
 public:
     template<typename Iterator, typename ErrorStream>
-    constexpr recognized_term match(
+    constexpr recognized_term_t match(
         match_options options,
         source_point sp,
         Iterator start,
@@ -1209,17 +1209,10 @@ public:
 };
 ```
 
-The ```recognized_term``` is a simple struct with two members: ```term_idx``` and ```len```.
-When returning this structure from ```match``` return term index (starting from 0 according to ```terms``` call in a parser definition)
-and the length of recognized term.
-
+When returning from ```match``` use ```unrecognized_term``` constant when failed to match a term or call ```recognized_term``` function:
 
 ```c++
-struct recognized_term
-{
-    constexpr recognized_term() = default;                      // use this overload to indicate lexer error - no term matched
-    constexpr recognized_term(size16_t term_idx, size_t len);   // use this overload to return a match
-};
+constexpr recognized_term_t recognized_term(size16_t term_idx, size32_t len, size16_t term_variant = 0);
 ```
 
 Take a look at the **custom-lexer.cpp** example for a tutorial on custom lexical analyzer implementation.

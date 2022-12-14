@@ -21,8 +21,8 @@ using size8_t = std::uint8_t;
 using size16_t = std::uint16_t;
 using size32_t = std::uint32_t;
 
-template<size_t N>
-using str_table = const char* [N];
+constexpr size_t max_regex_name_len = 100;
+constexpr size_t max_nterm_name_len = 100;
 
 constexpr size_t uninitialized = size_t(-1);
 constexpr size16_t uninitialized16 = size16_t(-1);
@@ -388,10 +388,11 @@ namespace utils
         return T();
     }
 
-    template<typename T, size_t... I>
-    constexpr void copy_array(T *a1, const T* a2, std::index_sequence<I...>)
+    template<typename T, size_t N>
+    constexpr void copy_array(T* a1, const T (&a2)[N])
     {
-        (void(a1[I] = a2[I]), ...);
+        for (auto i = 0u; i < N; ++i)
+            a1[i] = a2[i];
     }
 
     constexpr size_t char_to_idx(char c)
@@ -445,7 +446,7 @@ namespace utils
             }
         }
 
-        constexpr const char* name(char c) const { return arr[char_to_idx(c)]; }
+        constexpr const auto& name(char c) const { return arr[char_to_idx(c)]; }
 
     private:
         char arr[meta::distinct_chars_count][name_size] = {};
@@ -453,21 +454,21 @@ namespace utils
 
     constexpr char_names c_names = {};
 
-    constexpr bool str_equal(const char* str1, const char* str2)
+    template<size_t S1, size_t S2>
+    constexpr bool str_equal(const char (&str1)[S1], const char (&str2)[S2])
     {
-        if ((str1 == nullptr) || (str2 == nullptr))
-            throw std::runtime_error("null pointers not allowed here");
-        while (*str1 == *str2)
+        size_t i = 0;
+        while (str1[i] == str2[i])
         {
-            if (*str1 == 0)
+            if (str1[i] == 0)
                 return true;
-            str1++; str2++;
+            ++i;
         }
         return false;
     }
 
-    template<size_t N>
-    constexpr size_t find_str(const str_table<N>& table, const char* str)
+    template<size_t N, size_t M, size_t S>
+    constexpr size_t find_str(const char (&table)[N][M], const char (&str)[S])
     {
         size_t res = 0;
         for (const auto& n : table)
@@ -493,14 +494,6 @@ namespace utils
         return uninitialized;
     }
 
-    constexpr std::size_t str_len(const char* str)
-    {
-        std::size_t i = 0;
-        const char* p = str;
-        while (*p) { ++i; ++p; }
-        return i;
-    }
-
     struct slice
     {
         size32_t start;
@@ -511,6 +504,13 @@ namespace utils
     struct fake_table
     {
         T operator[](size_t) const { return val; }
+        T val;
+    };
+
+    template<typename T>
+    struct fake_table_2d
+    {
+        fake_table<T> operator[](size_t) const { return fake_table<T>{val}; }
         T val;
     };
 
@@ -726,7 +726,7 @@ namespace buffers
         template<size_t N1>
         constexpr cstring_buffer(const char(&source)[N1])
         {
-            utils::copy_array(data, source, std::make_index_sequence<N1>{});
+            utils::copy_array(data, source);
         }
 
         struct iterator
@@ -783,26 +783,40 @@ namespace buffers
 }
 
 template<typename ValueType>
+struct use_value_t
+{};
+
+template<typename ValueType>
+constexpr use_value_t<ValueType> use_value;
+
+template<typename ValueType, size_t N = max_nterm_name_len>
 class nterm
 {
 public:
     using value_type = ValueType;
 
-    constexpr nterm(const char* name) :
-        name(name)
+    template<typename ValueType1, size_t N1>
+    constexpr nterm(use_value_t<ValueType1>, const char (&name)[N1]):
+        nterm(name)
+    {}
+
+    template<size_t N1>
+    constexpr nterm(const char (&name)[N1])
     {
-        if (name[0] == 0)
-            throw std::runtime_error("empty name not allowed");
+        utils::copy_array(this->name, name);
     }
 
-    constexpr const char* get_name() const { return name; }
+    constexpr const auto& get_name() const { return name; }
 
     template<typename... Args>
     constexpr auto operator()(Args&&... args) const;
 
 private:
-    const char* name;
+    char name[N] = {};
 };
+
+template<typename ValueType, size_t N>
+nterm(use_value_t<ValueType>, const char (&)[N]) -> nterm<ValueType, N>;
 
 enum class associativity { no_assoc, ltor, rtol };
 
@@ -876,24 +890,36 @@ public:
     using internal_value_type = char;
 
     static const size_t dfa_size = 2;
-    static const bool is_trivial = true;
+    static const size_t group_count = 1;
 
     constexpr char_term(char c, int precedence = 0, associativity a = associativity::no_assoc):
         term(precedence, a), c(c)
     {
-        utils::copy_array(id, utils::c_names.name(c), std::make_index_sequence<utils::char_names::name_size>{});
+        id[0] = 'c';
+        id[1] = '_';
+        utils::copy_array(id + 2, utils::c_names.name(c));
+        utils::copy_array(name, utils::c_names.name(c));
     }
 
-    constexpr const char* get_id() const { return id; }
-    constexpr const char* get_name() const { return get_id(); }
+    constexpr const auto& get_id() const { return id; }
+    constexpr const auto& get_name() const { return name; }
     constexpr char get_char() const { return c; }
-    constexpr char get_data() const { return c; }
+    
+    template<typename T>
+    constexpr char get_data(T) const { return c; }
 
-    constexpr const auto& get_ftor() const { return utils::first_sv_char; }
+    template<typename T>
+    constexpr const auto& get_ftor(T) const { return utils::first_sv_char; }
+
+    constexpr static const auto& get_variant_name(size_t) { return ""; }
+
+    static const size_t id_len = utils::char_names::name_size + 2;
+    static const size_t name_len = utils::char_names::name_size;
 
 private:
     char c;
-    char id[utils::char_names::name_size] = {};
+    char id[id_len] = {};
+    char name[name_len] = {};
 };
 
 template<size_t DataSize>
@@ -902,22 +928,34 @@ class string_term : public term
 public:
     using internal_value_type = std::string_view;
     static const size_t dfa_size = (DataSize - 1) * 2;
-    static const bool is_trivial = true;
+    static const size_t group_count = 1;
 
     constexpr string_term(const char (&str)[DataSize], int precedence = 0, associativity a = associativity::no_assoc):
         term(precedence, a)
     {
-        utils::copy_array(data, str, std::make_index_sequence<DataSize>{});
+        id[0] = 's';
+        id[1] = '_';
+        utils::copy_array(id + 2, str);
+        utils::copy_array(data, str);
     }
 
-    constexpr const char* get_id() const { return data; }
-    constexpr const char* get_name() const { return get_id(); }
-    constexpr const auto& get_data() const { return data; }
+    constexpr const auto& get_id() const { return data; }
+    constexpr const auto& get_name() const { return data; }
 
-    constexpr const auto& get_ftor() const { return utils::pass_sv; }
+    template<typename T>
+    constexpr const auto& get_data(T) const { return data; }
+
+    template<typename T>
+    constexpr const auto& get_ftor(T) const { return utils::pass_sv; }
+
+    constexpr static const auto& get_variant_name(size_t) { return ""; }
+
+    static const size_t id_len = DataSize + 2;
+    static const size_t name_len = DataSize;
 
 private:
-    char data[DataSize] = {};
+    char id[id_len] = {};
+    char data[name_len] = {};
 };
 
 template<typename Term, typename Ftor>
@@ -926,56 +964,150 @@ class typed_term
 public:
     using internal_value_type = std::invoke_result_t<Ftor, std::string_view>;
     static const size_t dfa_size = Term::dfa_size;
-    static const bool is_trivial = Term::is_trivial;
+    static const size_t group_count = 1;
 
     constexpr typed_term(Term t, Ftor f):
         term(t), ftor(f)
     {}
 
-    constexpr const char* get_id() const { return term.get_id(); }
-    constexpr const char* get_name() const { return term.get_name(); }
-    constexpr decltype(auto) get_data() const { return term.get_data(); }
+    constexpr const auto& get_id() const { return term.get_id(); }
+    constexpr const auto& get_name() const { return term.get_name(); }
+
+    template<typename T>
+    constexpr decltype(auto) get_data(T) const { return term.get_data(T{}); }
 
     constexpr associativity get_associativity() const { return term.get_associativity(); }
     constexpr int get_precedence() const { return term.get_precedence(); }
 
     using ftor_type = Ftor;
 
-    constexpr const ftor_type& get_ftor() const { return ftor; }
+    template<typename T>
+    constexpr const ftor_type& get_ftor(T) const { return ftor; }
+
+    constexpr static const auto& get_variant_name(size_t) { return ""; }
+
+    static const size_t id_len = Term::id_len;
+    static const size_t name_len = Term::name_len;
 
 private:
     Term term;
     ftor_type ftor;
 };
 
-template<typename Ftor>
+template<typename Ftor, size_t N>
 class custom_term : public term
 {
 public:
     using internal_value_type = std::invoke_result_t<Ftor, std::string_view>;
     static const size_t dfa_size = 0;
-    static const bool is_trivial = false;
+    static const size_t group_count = 1;
 
-    constexpr custom_term(const char* custom_name, Ftor ftor, int precedence = 0, associativity a = associativity::no_assoc):
-        term(precedence, a), custom_name(custom_name), ftor(ftor)
-    {}
+    constexpr custom_term(const char (&custom_name)[N], Ftor ftor, int precedence = 0, associativity a = associativity::no_assoc):
+        term(precedence, a), ftor(ftor)
+    {
+        utils::copy_array(this->custom_name, custom_name);
+        id[0] = 'x';
+        id[1] = '_';
+        utils::copy_array(id + 2, custom_name);
+    }
 
-    constexpr const char* get_id() const { return get_name(); }
-    constexpr const char* get_name() const { return custom_name; }
+    constexpr const auto& get_id() const { return id; }
+    constexpr const auto& get_name() const { return custom_name; }
 
     using ftor_type = Ftor;
 
-    constexpr const ftor_type& get_ftor() const { return ftor; }
+    template<typename T>
+    constexpr const ftor_type& get_ftor(T) const { return ftor; }
+
+    constexpr static const auto& get_variant_name(size_t) { return ""; }
+
+    static const size_t id_len = N + 2;
+    static const size_t name_len = N;
 
 private:
-    const char* custom_name;
+    char custom_name[name_len] = {};
+    char id[id_len] = {};
     Ftor ftor;
 };
 
+template<typename T>
+constexpr bool is_groupped_term_v = false;
+
+template<size_t N, typename... Terms>
+class groupped_term
+{
+public:
+    using internal_value_type = meta::unique_types_variant_t<typename Terms::internal_value_type...>;
+    static const size_t dfa_size = (0 + ... + Terms::dfa_size);
+    static const size_t group_count = sizeof...(Terms);
+
+    template<typename = std::enable_if_t<(true && ... && !is_groupped_term_v<Terms>)>>
+    constexpr groupped_term(const char (&custom_name)[N], Terms... ts):
+        terms(ts...)
+    {
+        utils::copy_array(this->custom_name, custom_name);
+
+        id[0] = 'g';
+        char* ptr = id + 1;
+        ((*ptr++ = '_', utils::copy_array(ptr, ts.get_id()), ptr += Terms::id_len), ...);
+
+        size_t i = 0;
+        (utils::copy_array(variant_names[i++], ts.get_name()), ...);
+
+        if (!(true && ... && (get_precedence() == ts.get_precedence())))
+            throw std::runtime_error("Groupping terms with different precedence");
+        if (!(true && ... && (get_associativity() == ts.get_associativity())))
+            throw std::runtime_error("Groupping terms with different associativity");
+    }
+
+    constexpr const auto& get_id() const { return id; }
+    constexpr const auto& get_name() const { return custom_name; }
+
+    constexpr associativity get_associativity() const { return std::get<0>(terms).get_associativity(); }
+    constexpr int get_precedence() const { return std::get<0>(terms).get_precedence(); }
+
+    template<size_t I>
+    constexpr decltype(auto) get_data(std::integral_constant<size_t, I>) const
+    {
+        return std::get<I>(terms).get_data(std::integral_constant<size_t, 0>{});
+    }
+
+    template<size_t I>
+    constexpr decltype(auto) get_ftor(std::integral_constant<size_t, I>) const
+    {
+        auto item_ftor = std::get<I>(terms).get_ftor(std::integral_constant<size_t, 0>{});
+        return [item_ftor](const auto& sv)
+        {
+            return internal_value_type(item_ftor(sv));
+        };
+    }
+
+    constexpr const auto& get_variant_name(size_t variant_idx)
+    {
+        return variant_names[variant_idx];
+    }
+
+    static const size_t id_len = (0 + ... + Terms::id_len) + group_count + 1;
+    static const size_t name_len = N;
+
+private:
+    char custom_name[name_len] = {};
+    char id[id_len] = {};
+    char variant_names[group_count][meta::max_v<Terms::name_len...>] = {};
+    std::tuple<Terms...> terms;
+};
+
+template<size_t N, typename... Terms>
+constexpr bool is_groupped_term_v<groupped_term<N, Terms...>> = true;
+
+constexpr const char error_recovery_token_name [] = "<error>";
+
 struct error_recovery_token
 {
-    constexpr static const char* get_name() { return "<error_recovery_token>"; }
-    constexpr static const char* get_id() { return get_name(); }
+    constexpr static const auto& get_name() { return error_recovery_token_name; }
+    constexpr static const auto& get_id() { return error_recovery_token_name; }
+
+    static const size_t name_len = std::size(error_recovery_token_name);
 };
 
 constexpr error_recovery_token error;
@@ -990,8 +1122,8 @@ struct value_type<T, std::enable_if_t<std::is_base_of_v<term, T>>>
     using type = term_value<typename T::internal_value_type>;
 };
 
-template<typename ValueType>
-struct value_type<nterm<ValueType>>
+template<typename ValueType, size_t N>
+struct value_type<nterm<ValueType, N>>
 {
     using type = ValueType;
 };
@@ -1000,6 +1132,12 @@ template<typename Term, typename Ftor>
 struct value_type<typed_term<Term, Ftor>>
 {
     using type = term_value<typename typed_term<Term, Ftor>::internal_value_type>;
+};
+
+template<size_t N, typename... Terms>
+struct value_type<groupped_term<N, Terms...>>
+{
+    using type = term_value<typename groupped_term<N, Terms...>::internal_value_type>;
 };
 
 struct no_type {};
@@ -1030,31 +1168,30 @@ struct match_options
     constexpr match_options& set_verbose(bool val = true) { verbose = val; return *this; }
 };
 
-struct recognized_term
+using recognized_term_t = size_t;
+using term_idx_and_variant_t = size32_t;
+constexpr recognized_term_t unrecognized_term = uninitialized;
+
+constexpr size16_t get_term_idx(recognized_term_t v) { return size16_t(v & 0xffff); }
+constexpr size16_t get_term_variant(recognized_term_t v) { return size16_t(v >> 16); }
+constexpr size32_t get_term_len(recognized_term_t v) { return size32_t(v >> 32); }
+constexpr term_idx_and_variant_t get_term_idx_and_variant(recognized_term_t v) { return size32_t(v & 0xffffffff); }
+constexpr size16_t get_term_idx(term_idx_and_variant_t v) { return size16_t(v & 0xffff); }
+constexpr size16_t get_term_variant(term_idx_and_variant_t v) { return size16_t(v >> 16); }
+
+constexpr recognized_term_t recognized_term(size16_t term_idx, size32_t len, size16_t term_variant = 0)
 {
-    constexpr recognized_term() = default;
+    return (size_t(len) << 32) | (size_t(term_variant << 16)) | size_t(term_idx);
+}
 
-    constexpr recognized_term(size16_t term_idx, size_t len):
-        term_idx(term_idx), len(len)
-    {}
-
-    size16_t term_idx = uninitialized16;
-    size_t len = uninitialized16;
-};
+constexpr term_idx_and_variant_t term_idx_and_variant(size16_t term_idx, size16_t term_variant = 0)
+{
+    return (size_t(term_variant << 16)) | size_t(term_idx);
+}
 
 namespace regex
 {
     using conflicted_terms = size16_t[4];
-
-    constexpr void add_conflicted_term(conflicted_terms& ts, size16_t t)
-    {
-        for (size_t i = 0; i < 4; ++i)
-            if (ts[i] == uninitialized16)
-            {
-                ts[i] = t;
-                break;
-            }
-    }
 
     static const size_t transitions_size = meta::distinct_values_count<char>;
 
@@ -1067,10 +1204,27 @@ namespace regex
                 t = uninitialized16;
         }
 
+        using recognition_t = size32_t;
+
+        static constexpr recognition_t make_recognition(size16_t term_idx, size16_t term_variant)
+        {
+            return (size32_t(term_idx) << 16) | size32_t(term_variant);
+        }
+
+        static constexpr size16_t get_term_idx(recognition_t recognition)
+        {
+            return size16_t(recognition >> 16);
+        }
+
+        static constexpr size16_t get_term_variant(recognition_t recognition)
+        {
+            return size16_t(recognition & 0xffff);
+        }
+
         size8_t start_state = 0;
         size8_t end_state = 0;
         size8_t unreachable = 0;
-        conflicted_terms conflicted_recognition = { uninitialized16, uninitialized16, uninitialized16, uninitialized16 };
+        recognition_t recognition = uninitialized32;
         size16_t transitions[transitions_size] = {};
         stdex::cbitset<N> merged_from = {};
     };
@@ -1301,11 +1455,11 @@ namespace regex
             return slice{ s1.start, s1.n + s2.n };
         }
 
-        constexpr void mark_end_states(slice s, size16_t idx)
+        constexpr void mark_end_states(slice s, size16_t term_idx, size16_t term_variant)
         {
             for (size_t i = s.start; i < s.start + s.n; ++i)
             {
-                mark_end_state(sm[i], idx);
+                mark_end_state(sm[i], term_idx, term_variant);
             }
         }
 
@@ -1348,22 +1502,22 @@ namespace regex
                     merge(tr_to, tr_from, keep_end_state, mark_from_as_unreachable);
             }
 
-            auto& cr = s_from.conflicted_recognition;
-            for (size_t j = 0; j < 4; ++j)
-            {
-                size16_t term_idx = cr[j];
-                if (term_idx != uninitialized16)
-                    mark_end_state(s_to, term_idx);
-                else
-                    break;
-            }
+            if (s_from.recognition != uninitialized32)
+                mark_end_state(s_to, s_from.recognition);
         }
 
-        constexpr void mark_end_state(dfa_state_n& s, size16_t idx)
+        constexpr void mark_end_state(dfa_state_n& s, size16_t term_idx, size16_t term_variant)
         {
             if (!s.end_state)
                 return;
-            add_conflicted_term(s.conflicted_recognition, idx);
+            s.recognition = dfa_state_n::make_recognition(term_idx, term_variant);
+        }
+
+        constexpr void mark_end_state(dfa_state_n& s, size32_t recognition)
+        {
+            if (!s.end_state)
+                return;
+            s.recognition = recognition;
         }
 
         dfa<N>& sm;
@@ -1376,18 +1530,18 @@ namespace regex
     };
 
     template<size_t N>
-    constexpr void add_term_data_to_dfa(char c, dfa_builder<N>& b, size16_t idx)
+    constexpr void add_term_data_to_dfa(char c, dfa_builder<N>& b, size16_t idx, size16_t variant)
     {
         using slice = utils::slice;
 
         slice prev{0, size32_t(b.size())};
         slice new_sl = b.primary_char(c);
-        b.mark_end_states(new_sl, idx);
+        b.mark_end_states(new_sl, idx, variant);
         b.alt(prev, new_sl);
     }
 
     template<size_t N, size_t DataSize>
-    constexpr void add_term_data_to_dfa(const char (&str)[DataSize], dfa_builder<N>& b, size16_t idx)
+    constexpr void add_term_data_to_dfa(const char (&str)[DataSize], dfa_builder<N>& b, size16_t idx, size16_t variant)
     {
         using slice = utils::slice;
         slice prev{0, size32_t(b.size())};
@@ -1399,13 +1553,13 @@ namespace regex
             whole = b.cat(whole, char_sl);
         }
 
-        b.mark_end_states(whole, idx);
+        b.mark_end_states(whole, idx, variant);
         b.alt(prev, whole);
     }
 
     template<size_t N, size_t PatternSize>
-    constexpr void add_term_data_to_dfa(const regex_pattern_data<PatternSize>& pattern_data, dfa_builder<N>& b, size16_t idx);
-    
+    constexpr void add_term_data_to_dfa(const regex_pattern_data<PatternSize>& pattern_data, dfa_builder<N>& b, size16_t idx, size16_t variant);
+
     template<size_t N, typename Iterator, typename ErrorStream>
     constexpr auto dfa_match(
         const dfa<N>& sm,
@@ -1416,20 +1570,22 @@ namespace regex
         ErrorStream& error_stream)
     {
         size16_t state_idx = 0;
-        recognized_term rt;
+        recognized_term_t rt = unrecognized_term;
         size_t len = 0;
         while (true)
         {
             const auto& state = sm[state_idx];
-            size16_t rec_idx = state.conflicted_recognition[0];
-            if (rec_idx != uninitialized16)
+
+            if (state.recognition != uninitialized32)
             {
-                rt.len = len;
-                rt.term_idx = rec_idx;
+                size16_t term_idx = dfa_state<N>::get_term_idx(state.recognition);
+                size16_t term_variant = dfa_state<N>::get_term_variant(state.recognition);
+
+                rt = recognized_term(term_idx, len, term_variant);
 
                 if (options.verbose)
                 {
-                    error_stream << sp << " REGEX MATCH: Recognized " << rec_idx << "\n";
+                    error_stream << sp << " REGEX MATCH: Recognized term with index " << term_idx << ", variant " << term_variant << "\n";
                 }
             }
 
@@ -1456,22 +1612,28 @@ namespace regex
         return rt;
     }
 
-    template<typename Stream, typename StrTable, size_t N>
-    constexpr void write_dfa_state_diag_str(const dfa_state<N>& st, Stream& s, size16_t idx, const StrTable& term_names)
+    template<typename Stream, typename StrTable, typename StrTableArr, size_t N>
+    constexpr void write_dfa_state_diag_str(const dfa_state<N>& st, Stream& s, size16_t idx,
+        const StrTable& term_names, const StrTableArr& term_variant_names)
     {
-        s << "STATE " << idx;
+        s << "STATE " << idx << " ";
         if (st.unreachable)
         {
-            s << " (unreachable) \n";
+            s << "(unreachable) \n";
             return;
         }
 
         if (st.end_state)
-            s << " recognized ";
-        size16_t term_idx = st.conflicted_recognition[0];
-        if (term_idx != uninitialized16)
+            s << "recognized ";
+        if (st.recognition != uninitialized32)
+        {
+            size16_t term_idx = dfa_state<N>::get_term_idx(st.recognition);
+            size16_t term_variant = dfa_state<N>::get_term_variant(st.recognition);
             s << term_names[term_idx];
-        s << "   ";
+            if (term_variant_names[term_idx][term_variant][0] != 0)
+                s << "[" << term_variant_names[term_idx][term_variant] << "]";
+            s << "   ";
+        }
 
         auto f_range = [&s](const auto& r, size16_t state_idx)
         {
@@ -1515,17 +1677,17 @@ namespace regex
         s << "\n";
     }
 
-    template<size_t N, typename Stream, typename StrTable>
-    constexpr void write_dfa_diag_str(const dfa<N>& sm, Stream& stream, const StrTable& term_names)
+    template<size_t N, typename Stream, typename StrTable, typename StrTableArr>
+    constexpr void write_dfa_diag_str(const dfa<N>& sm, Stream& stream, const StrTable& term_names, const StrTableArr& term_variant_names)
     {
         for (size16_t i = 0; i < sm.size(); ++i)
-            write_dfa_state_diag_str(sm[i], stream, i, term_names);
+            write_dfa_state_diag_str(sm[i], stream, i, term_names, term_variant_names);
     }
 
     template<size_t N, typename Stream>
     constexpr void write_dfa_diag_str(const dfa<N>& sm, Stream& stream)
     {
-        write_dfa_diag_str(sm, stream, utils::fake_table<const char*>{""});
+        write_dfa_diag_str(sm, stream, utils::fake_table<const char*>{""}, utils::fake_table_2d<const char*>{""});
     }
 }
 
@@ -1548,19 +1710,32 @@ namespace detail
         return string_term<N>(str);
     }
 
+    constexpr const char fake_root_name[] = "##";
+
     template<typename ValueType>
     struct fake_root
     {
         using value_type = ValueType;
 
-        constexpr auto operator()(const nterm<ValueType>& nt) const;
+        template<size_t N>
+        constexpr auto operator()(const nterm<ValueType, N>& nt) const;
 
-        constexpr static const char* get_name() { return "##"; };
+        constexpr static const auto& get_name() { return fake_root_name; };
+
+        static const size_t name_len = std::size(fake_root_name);
     };
 
+    constexpr const char eof_name[] = "<eof>";
+    
     struct eof
     {
-        constexpr static const char* get_name() { return "<eof>"; }
+        constexpr static const auto& get_name() { return eof_name; }
+        constexpr static const auto& get_id() { return eof_name; }
+
+        constexpr static const auto& get_variant_name(size_t) { return ""; }
+
+        static const size_t name_len = std::size(eof_name);
+        static const size_t id_len = std::size(eof_name);
     };
 
     template<bool RequiresContext, typename F, typename L, typename...R>
@@ -1622,22 +1797,23 @@ namespace detail
         return make_term(arg);
     }
 
-    template<typename ValueType>
-    constexpr auto make_rule_item(const nterm<ValueType>& nt)
+    template<typename ValueType, size_t N>
+    constexpr auto make_rule_item(const nterm<ValueType, N>& nt)
     {
         return nt;
     }
 
     template<typename ValueType>
-    constexpr auto fake_root<ValueType>::operator()(const nterm<ValueType>& nt) const
+    template<size_t N>
+    constexpr auto fake_root<ValueType>::operator()(const nterm<ValueType, N>& nt) const
     {
         return rule(*this, std::make_tuple(nt));
     }
 }
 
-template<typename ValueType>
+template<typename ValueType, size_t N>
 template<typename... Args>
-constexpr auto nterm<ValueType>::operator()(Args&&... args) const
+constexpr auto nterm<ValueType, N>::operator()(Args&&... args) const
 {
     return detail::rule(
         *this,
@@ -1723,7 +1899,7 @@ namespace detail
             current_end_it(buffer_begin),
             buffer_end(buffer_end),
             reductors(reductors),
-            current_term_idx(uninitialized16),
+            current_term_idx_and_variant(uninitialized32),
             recovery_mode(false),
             consume_mode(false)
         {
@@ -1749,7 +1925,7 @@ namespace detail
         iterator current_end_it;
         iterator buffer_end;
         const ValueReductors& reductors;
-        size16_t current_term_idx;
+        term_idx_and_variant_t current_term_idx_and_variant;
         bool recovery_mode;
         bool consume_mode;
     };
@@ -1819,7 +1995,7 @@ template<typename T, size_t SituationCount>
 struct get_limits
 {
     static const size_t state_count_cap = T::state_count_cap;
-    static const size_t max_sit_count_per_state_cap = T::max_sit_count_per_state_cap;    
+    static const size_t max_sit_count_per_state_cap = T::max_sit_count_per_state_cap;
 };
 
 template<size_t SituationCount>
@@ -1833,9 +2009,9 @@ template<typename Root, typename Terms, typename NTerms, typename Rules, typenam
 class parser
 {};
 
-template<typename RootValueType, typename... Terms, typename... NTerms, typename... Rules, typename LexerUsage, typename Limits>
+template<typename RootValueType, size_t RootNameLen, typename... Terms, typename... NTerms, typename... Rules, typename LexerUsage, typename Limits>
 class parser<
-    nterm<RootValueType>,
+    nterm<RootValueType, RootNameLen>,
     std::tuple<Terms...>,
     std::tuple<NTerms...>,
     std::tuple<Rules...>,
@@ -1847,7 +2023,7 @@ private:
     using term_tuple_type = std::tuple<Terms...>;
     using nterm_tuple_type = std::tuple<NTerms...>;
     using rule_tuple_type = std::tuple<Rules...>;
-    using root_nterm_type = nterm<RootValueType>;
+    using root_nterm_type = nterm<RootValueType, RootNameLen>;
     using root_value_type = RootValueType;
 
     static const bool generate_lexer = std::is_same_v<LexerUsage, use_generated_lexer>;
@@ -1945,11 +2121,13 @@ public:
         {
             size16_t cursor = ps.cursor_stack.back();
 
-            auto t_idx = get_current_term(ps);
-            if (t_idx == uninitialized16)
+            term_idx_and_variant_t current_term_idx_and_variant = get_current_term(ps);
+            size16_t term_idx = get_term_idx(current_term_idx_and_variant);
+            size16_t term_variant = get_term_variant(current_term_idx_and_variant);
+            if (term_idx == uninitialized16)
                 break;
 
-            const auto& entry = parse_table[cursor][get_parse_table_idx(true, t_idx)];
+            const auto& entry = parse_table[cursor][get_parse_table_idx(true, term_idx)];
 
             if (entry.kind == parse_table_entry_kind::error)
             {
@@ -1976,7 +2154,7 @@ public:
 
             if (entry.kind == parse_table_entry_kind::shift)
             {
-                shift(ps, buffer.get_view(ps.current_it, ps.current_end_it), t_idx, entry.arg);
+                shift(ps, buffer.get_view(ps.current_it, ps.current_end_it), term_idx, term_variant, entry.arg);
                 consume_term(ps);
             }
             else if (entry.kind == parse_table_entry_kind::shift_error_recovery_token)
@@ -2042,7 +2220,7 @@ public:
         if constexpr (generate_lexer)
         {
             s << "LEXICAL ANALYZER" << "\n\n";
-            regex::write_dfa_diag_str(lexer_sm, s, term_names);
+            regex::write_dfa_diag_str(lexer_sm, s, term_names, term_variant_names);
         }
         s << "\n";
     }
@@ -2052,6 +2230,7 @@ private:
     static const size16_t eof_idx = sizeof...(Terms);
     static const size16_t error_recovery_token_idx = sizeof...(Terms) + 1;
     static const size_t term_count = sizeof...(Terms) + 2;
+    static const size_t max_term_variant_group_count = meta::max_v<Terms::group_count...>;
     static const size16_t fake_root_idx = sizeof...(NTerms);
     static const size_t nterm_count = sizeof...(NTerms) + 1;
     static const size_t symbol_count = term_count + nterm_count;
@@ -2061,11 +2240,14 @@ private:
     static const size_t situation_size = max_rule_element_count + 1;
     static const size_t situation_address_space_size = rule_count * situation_size * term_count;
     static const size_t situation_count = (0 + ... + (Rules::n + 1)) * term_count + 2;
-        
+
     static const size_t state_count_cap = get_limits<Limits, situation_count>::state_count_cap;
     static const size_t max_sit_count_per_state_cap = get_limits<Limits, situation_count>::max_sit_count_per_state_cap;
-    
+
     static const size_t lexer_dfa_size = generate_lexer ? (0 + ... + Terms::dfa_size) : 1;
+
+    static const size_t max_term_name_len = meta::max_v<Terms::name_len..., detail::eof::id_len, error_recovery_token::name_len>;
+    static const size_t max_term_id_len = meta::max_v<Terms::id_len..., detail::eof::id_len, error_recovery_token::name_len>;
 
     using value_variant_type = meta::unique_types_variant_t<
         std::nullptr_t,
@@ -2113,7 +2295,7 @@ private:
     };
 
     using situation_set = stdex::cbitset<situation_address_space_size>;
-    
+
     struct situation_info
     {
         size16_t rule_info_idx = uninitialized16;
@@ -2163,7 +2345,7 @@ private:
         using nterm_subset = stdex::cbitset<nterm_count>;
         using right_side_slice_subset = stdex::cbitset<situation_size * rule_count>;
         using situation_vector = stdex::cvector<size32_t, max_sit_count_per_state_cap>;
-        
+
         struct state
         {
             situation_vector all_situations_vec = {};
@@ -2172,7 +2354,7 @@ private:
         };
 
         using state_table = state[state_count_cap];
-        
+
         constexpr bool add_situation(size16_t state_idx, size32_t sit_idx, bool to_kernel)
         {
             if (!simple_states[state_idx].test(sit_idx))
@@ -2505,16 +2687,17 @@ private:
 
     constexpr void analyze_eof()
     {
-        term_names[eof_idx] = detail::eof::get_name();
-        term_ids[eof_idx] = detail::eof::get_name();
+        utils::copy_array(term_names[eof_idx], detail::eof::get_name());
+        utils::copy_array(term_ids[eof_idx], detail::eof::get_id());
         gi.term_precedences[eof_idx] = 0;
         gi.term_associativities[eof_idx] = associativity::no_assoc;
+        assign_term_variant_names<eof_idx>(detail::eof{}, std::make_index_sequence<1>{});
     }
 
     constexpr void analyze_error_recovery_token()
     {
-        term_names[error_recovery_token_idx] = error_recovery_token::get_name();
-        term_ids[error_recovery_token_idx] = error_recovery_token::get_name();
+        utils::copy_array(term_names[error_recovery_token_idx], error_recovery_token::get_name());
+        utils::copy_array(term_ids[error_recovery_token_idx], error_recovery_token::get_id());
         gi.term_precedences[error_recovery_token_idx] = 0;
         gi.term_associativities[error_recovery_token_idx] = associativity::no_assoc;
     }
@@ -2524,21 +2707,34 @@ private:
     {
         gi.term_precedences[TermIdx] = t.get_precedence();
         gi.term_associativities[TermIdx] = t.get_associativity();
-        term_names[TermIdx] = t.get_name();
-        term_ids[TermIdx] = t.get_id();
-        term_ftors[TermIdx] = string_view_to_term_value<TermIdx>;
+        utils::copy_array(term_names[TermIdx], t.get_name());
+        utils::copy_array(term_ids[TermIdx], t.get_id());
+        assign_term_ftors<TermIdx>(std::make_index_sequence<Term::group_count>{});
+        assign_term_variant_names<TermIdx>(t, std::make_index_sequence<Term::group_count>{});
     }
 
-    template<typename ValueType>
-    constexpr void analyze_nterm(const nterm<ValueType>& nt, size16_t idx)
+    template<size_t TermIdx, size_t... TermVariant>
+    constexpr void assign_term_ftors(std::index_sequence<TermVariant...>)
     {
-        nterm_names[idx] = nt.get_name();
+        ((term_ftors[TermIdx][TermVariant] = string_view_to_term_value<TermIdx, TermVariant>), ...);
+    }
+
+    template<size_t TermIdx, typename Term, size_t... TermVariant>
+    constexpr void assign_term_variant_names(Term t, std::index_sequence<TermVariant...>)
+    {
+        (utils::copy_array(term_variant_names[TermIdx][TermVariant], t.get_variant_name(TermVariant)), ...);
+    }
+
+    template<typename ValueType, size_t N>
+    constexpr void analyze_nterm(const nterm<ValueType, N>& nt, size16_t idx)
+    {
+        utils::copy_array(nterm_names[idx], nt.get_name());
     }
 
     template<typename ValueType>
     constexpr void analyze_nterm(detail::fake_root<ValueType>)
     {
-        nterm_names[fake_root_idx] = detail::fake_root<ValueType>::get_name();
+        utils::copy_array(nterm_names[fake_root_idx], detail::fake_root<ValueType>::get_name());
     }
 
     template<typename Term>
@@ -2547,8 +2743,8 @@ private:
         return symbol{ true, size16_t(utils::find_str(term_ids, t.get_id())) };
     }
 
-    template<typename ValueType>
-    constexpr auto make_symbol(const nterm<ValueType>& nt) const
+    template<typename ValueType, size_t N>
+    constexpr auto make_symbol(const nterm<ValueType, N>& nt) const
     {
         return symbol{ false, size16_t(utils::find_str(nterm_names, nt.get_name())) };
     }
@@ -2715,12 +2911,13 @@ private:
         }
     }
 
-    template<size16_t TermIdx>
+    template<size16_t TermIdx, size16_t TermVariant>
     constexpr static value_variant_type string_view_to_term_value(const term_tuple_type& term_tuple, const std::string_view& sv, source_point sp)
     {
         const auto &t = std::get<TermIdx>(term_tuple);
         using term_value_type = value_type_t<std::tuple_element_t<TermIdx, term_tuple_type>>;
-        return value_variant_type(term_value_type(t.get_ftor()(sv), sp));
+        constexpr auto i = std::integral_constant<size_t, TermVariant>{};
+        return value_variant_type(term_value_type(t.get_ftor(i)(sv), sp));
     }
 
     template<typename ParseState>
@@ -2734,13 +2931,13 @@ private:
     }
 
     template<typename ParseState>
-    constexpr void shift(ParseState& ps, const std::string_view& sv, size16_t term_idx, size16_t new_cursor_value) const
+    constexpr void shift(ParseState& ps, const std::string_view& sv, size16_t term_idx, size16_t term_variant, size16_t new_cursor_value) const
     {
         if (ps.options.verbose)
-            ps.error_stream << ps.current_sp << " PARSE: Shift to " << new_cursor_value << ", term: " << sv << "\n";
+            ps.error_stream << ps.current_sp << " PARSE: Shift to " << new_cursor_value << ", term content: " << sv << "\n";
         ps.cursor_stack.push_back(new_cursor_value);
 
-        const auto& ftor = term_ftors[term_idx];
+        const auto& ftor = term_ftors[term_idx][term_variant];
         ps.value_stack.emplace_back(ftor(term_tuple, sv, ps.current_sp));
     }
 
@@ -2805,10 +3002,21 @@ private:
     }
 
     template<typename ParseState>
+    constexpr void print_term_name(ParseState& ps) const
+    {
+        size16_t term_idx = get_term_idx(ps.current_term_idx_and_variant);
+        size16_t term_variant = get_term_variant(ps.current_term_idx_and_variant);
+        ps.error_stream << term_names[term_idx];
+        if (term_variant_names[term_idx][term_variant][0] != 0)
+            ps.error_stream << "[" << term_variant_names[term_idx][term_variant] << "]";
+    }
+
+    template<typename ParseState>
     constexpr void syntax_error(ParseState& ps) const
     {
-        ps.error_stream << ps.current_sp << " PARSE: Syntax error: " <<
-            "Unexpected '" << term_names[ps.current_term_idx] << "'" << "\n";
+        ps.error_stream << ps.current_sp << " PARSE: Syntax error: " << "Unexpected term ";
+        print_term_name(ps);
+        ps.error_stream << "\n";
     }
 
     template<typename ParseState>
@@ -2871,24 +3079,26 @@ private:
     template<typename ParseState>
     constexpr bool consume_term_recovering(ParseState& ps) const
     {
-        if (ps.current_term_idx == eof_idx)
+        if (get_term_idx(ps.current_term_idx_and_variant) == eof_idx)
             return false;
         if (ps.options.verbose)
         {
-            ps.error_stream << ps.current_sp << " PARSE: Recovery, consuming term " << term_names[ps.current_term_idx] << " \n";
+            ps.error_stream << ps.current_sp << " PARSE: Recovery, consuming term ";
+            print_term_name(ps);
+            ps.error_stream << "\n";
         }
         consume_term(ps);
         return true;
     }
 
     template<typename ParseState>
-    constexpr size16_t get_current_term(ParseState& ps) const
+    constexpr term_idx_and_variant_t get_current_term(ParseState& ps) const
     {
         if (ps.in_recovery_mode())
-            return error_recovery_token_idx;
+            return term_idx_and_variant(error_recovery_token_idx);
 
         if (ps.current_it != ps.current_end_it)
-            return ps.current_term_idx;
+            return ps.current_term_idx_and_variant;
 
         if (ps.options.skip_whitespace)
         {
@@ -2899,12 +3109,12 @@ private:
 
         if (ps.current_it == ps.buffer_end)
         {
-            ps.current_term_idx = eof_idx;
+            ps.current_term_idx_and_variant = term_idx_and_variant(eof_idx);
             trace_recognized_term(ps);
             return eof_idx;
         }
 
-        recognized_term res;
+        recognized_term_t res = unrecognized_term;
         match_options opts;
         opts.set_verbose(ps.options.verbose);
 
@@ -2918,20 +3128,18 @@ private:
             res = custom_lexer.match(opts, ps.current_sp, ps.current_it, ps.buffer_end, ps.error_stream);
         }
 
-        ps.current_term_idx = res.term_idx;
-        ps.current_end_it = ps.current_it + res.len;
-
-        if (ps.current_term_idx == uninitialized16)
+        if (res == unrecognized_term)
         {
             unexpected_char(ps);
-            return uninitialized16;
+            return term_idx_and_variant(uninitialized16);
         }
         else
         {
+            ps.current_term_idx_and_variant = get_term_idx_and_variant(res);
+            ps.current_end_it = ps.current_it + get_term_len(res);
             trace_recognized_term(ps);
+            return ps.current_term_idx_and_variant;
         }
-
-        return ps.current_term_idx;
     }
 
     template<typename ParseState>
@@ -2966,7 +3174,11 @@ private:
     constexpr void trace_recognized_term(ParseState& ps) const
     {
         if (ps.options.verbose)
-            ps.error_stream << ps.current_sp << " PARSE: Recognized " << term_names[ps.current_term_idx] << " \n";
+        {
+            ps.error_stream << ps.current_sp << " PARSE: Recognized ";
+            print_term_name(ps);
+            ps.error_stream << "\n";
+        }
     }
 
     struct no_parser{};
@@ -2977,13 +3189,26 @@ private:
         if constexpr (generate_lexer)
         {
             regex::dfa_builder<lexer_dfa_size> b(lexer_sm);
-            (void(regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(), b, size16_t(I))), ...);
+            (
+                add_term_to_lexer(
+                    b, 
+                    std::integral_constant<size_t, I>{}, 
+                    std::make_index_sequence<std::tuple_element_t<I, term_tuple_type>::group_count>{}
+                ), ...
+            );
         }
     }
 
-    str_table<term_count> term_names = {};
-    str_table<term_count> term_ids = {};
-    str_table<nterm_count> nterm_names = {};
+    template<size_t I, size_t... J>
+    constexpr void add_term_to_lexer(regex::dfa_builder<lexer_dfa_size>& b, std::integral_constant<size_t, I>, std::index_sequence<J...>)
+    {
+        (regex::add_term_data_to_dfa(std::get<I>(term_tuple).get_data(std::integral_constant<size_t, J>{}), b, size16_t(I), size16_t(J)), ...);
+    }
+
+    char term_names[term_count][max_term_name_len] = {};
+    char term_variant_names[term_count][max_term_variant_group_count][max_term_name_len] = {};
+    char term_ids[term_count][max_term_id_len] = {};
+    char nterm_names[nterm_count][max_nterm_name_len] = {};
     grammar_info gi = {};
 
     simple_state_table states;
@@ -2996,7 +3221,7 @@ private:
     rule_tuple_type rule_tuple;
 
     using string_view_to_term_value_t = value_variant_type(*)(const term_tuple_type&, const std::string_view&, source_point);
-    string_view_to_term_value_t term_ftors[term_count] = {};
+    string_view_to_term_value_t term_ftors[term_count][max_term_variant_group_count] = {};
 
     using dfa_type = regex::dfa<lexer_dfa_size>;
     dfa_type lexer_sm = {};
@@ -3064,7 +3289,7 @@ namespace regex
             ErrorStream& error_stream)
         {
             if (start == end)
-                return recognized_term{};
+                return unrecognized_term;
 
             char c = *start;
 
@@ -3082,7 +3307,7 @@ namespace regex
             if (ok)
                 return res(1, len);
 
-            return recognized_term{};
+            return unrecognized_term;
         }
 
     private:
@@ -3331,12 +3556,12 @@ namespace regex
         using slice = utils::slice;
         using namespace ftors;
 
-        constexpr nterm<slice> expr("expr");
-        constexpr nterm<slice> alt("alt");
-        constexpr nterm<slice> concat("concat");
-        constexpr nterm<slice> q_expr("q_expr");
-        constexpr nterm<slice> primary("primary");
-        constexpr nterm<size32_t> number("number");
+        constexpr nterm expr(use_value<slice>, "expr");
+        constexpr nterm alt(use_value<slice>, "alt");
+        constexpr nterm concat(use_value<slice>, "concat");
+        constexpr nterm q_expr(use_value<slice>, "q_expr");
+        constexpr nterm primary(use_value<slice>, "primary");
+        constexpr nterm number(use_value<size32_t>, "number");
 
         constexpr custom_term regex_digit_09("regex_digit_09", [](auto sv) { return size32_t(sv[0]) - '0'; });
         constexpr custom_term regex_primary("regex_primary", string_view_to_subset);
@@ -3383,7 +3608,7 @@ namespace regex
     }
 
     template<size_t N, size_t PatternSize>
-    constexpr void add_term_data_to_dfa(const regex_pattern_data<PatternSize>& pattern_data, dfa_builder<N>& b, size16_t idx)
+    constexpr void add_term_data_to_dfa(const regex_pattern_data<PatternSize>& pattern_data, dfa_builder<N>& b, size16_t idx, size16_t variant)
     {
         using slice = utils::slice;
         utils::no_stream s{};
@@ -3397,7 +3622,7 @@ namespace regex
         if (res.has_value())
         {
             slice prev{0, size32_t(b.size())};
-            b.mark_end_states(res.value(), idx);
+            b.mark_end_states(res.value(), idx, variant);
             b.alt(prev, res.value());
         }
         else
@@ -3428,7 +3653,7 @@ namespace regex
             );
             if (!s.has_value())
                 throw std::runtime_error("invalid regex");
-            b.mark_end_states(s.value(), 0);
+            b.mark_end_states(s.value(), 0, 0);
         }
 
         template<typename Stream>
@@ -3466,12 +3691,12 @@ namespace regex
         constexpr bool match(match_options opts, const Buffer& buf, Stream& s) const
         {
             auto res = dfa_match(sm, opts, source_point{}, buf.begin(), buf.end(), s);
-            auto end = buf.begin() + res.len;
-            if (res.term_idx == 0 && end == buf.end())
+            auto end = buf.begin() + get_term_len(res);
+            if (get_term_idx(res) == 0 && end == buf.end())
                 return true;
             else
             {
-                if (res.term_idx == 0)
+                if (get_term_idx(res) == 0)
                     s << "Leftover text after recognition: " << buf.get_view(end, buf.end()) << "\n";
                 else
                     s << "Unexpected char: " << utils::c_names.name(*end) << "\n";
@@ -3491,43 +3716,67 @@ namespace regex
 }
 
 template<auto& Pattern>
+struct pattern_t
+{
+    constexpr static const auto& get_pattern() { return Pattern; }
+};
+
+template<auto& Pattern>
+constexpr pattern_t<Pattern> pattern;
+
+template<auto& Pattern, size_t N = max_regex_name_len>
 class regex_term : public term
 {
 public:
     using internal_value_type = std::string_view;
 
     static const size_t dfa_size = regex::analyze_dfa_size(Pattern);
-    static const bool is_trivial = false;
+    static const size_t group_count = 1;
 
     static const size_t pattern_size = std::size(Pattern);
 
-    constexpr regex_term(associativity a = associativity::no_assoc) :
-        regex_term(nullptr, 0, a)
+    template<typename PatternType, size_t N1>
+    constexpr regex_term(PatternType, const char (&custom_name)[N1], int precedence = 0, associativity a = associativity::no_assoc):
+        regex_term(custom_name, precedence, a)
     {}
 
-    constexpr regex_term(int precedence = 0, associativity a = associativity::no_assoc) :
-        regex_term(nullptr, precedence, a)
-    {}
-
-    constexpr regex_term(const char *custom_name, int precedence = 0, associativity a = associativity::no_assoc) :
-        term(precedence, a),
-        custom_name(custom_name)
+    template<size_t N1>
+    constexpr regex_term(const char (&custom_name)[N1], int precedence = 0, associativity a = associativity::no_assoc):
+        term(precedence, a)
     {
         id[0] = 'r';
         id[1] = '_';
-        utils::copy_array(&id[2], Pattern, std::make_index_sequence<pattern_size>{});
+        utils::copy_array(&id[2], Pattern);
+        utils::copy_array(this->custom_name, custom_name);
     }
 
-    constexpr const char* get_name() const { return custom_name ? custom_name : id; }
-    constexpr const char* get_id() const { return id; }
-    constexpr auto get_data() const { return regex::regex_pattern_data<pattern_size>{ Pattern }; }
+    constexpr const auto& get_name() const { return custom_name; }
+    constexpr const auto& get_id() const { return id; }
 
-    constexpr const auto& get_ftor() const { return utils::pass_sv; }
+    template<typename T>
+    constexpr auto get_data(T) const { return regex::regex_pattern_data<pattern_size>{ Pattern }; }
+
+    template<typename T>
+    constexpr const auto& get_ftor(T) const { return utils::pass_sv; }
+
+    constexpr static const auto& get_variant_name(size_t) { return ""; }
+
+    static const size_t id_len = pattern_size + 2;
+    static const size_t name_len = N;
 
 private:
-    char id[pattern_size + 2] = {};
-    const char* custom_name = nullptr;
+    char id[id_len] = {};
+    char custom_name[name_len] = {};
 };
+
+template<typename PatternType, size_t N>
+regex_term(PatternType, const char (&)[N], int, associativity) -> regex_term<PatternType::get_pattern(), N>;
+
+template<typename PatternType, size_t N>
+regex_term(PatternType, const char (&)[N], int) -> regex_term<PatternType::get_pattern(), N>;
+
+template<typename PatternType, size_t N>
+regex_term(PatternType, const char (&)[N]) -> regex_term<PatternType::get_pattern(), N>;
 
 } // namespace ctpg
 
