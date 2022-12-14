@@ -1571,7 +1571,7 @@ namespace regex
     {
         size16_t state_idx = 0;
         recognized_term_t rt = unrecognized_term;
-        size_t len = 0;
+        size32_t len = 0;
         while (true)
         {
             const auto& state = sm[state_idx];
@@ -3293,7 +3293,7 @@ namespace regex
 
             char c = *start;
 
-            auto res = [&](size16_t idx, size_t len)
+            auto res = [&](size16_t idx, size32_t len)
             { return recognized(idx, len, options, sp, error_stream); };
 
             if (specials[utils::char_to_idx(c)] != 0)
@@ -3302,7 +3302,7 @@ namespace regex
             if (utils::is_dec_digit(c))
                 return res(0, 1);
 
-            size_t len = 0;
+            size32_t len = 0;
             bool ok = match_primary(start, end, len);
             if (ok)
                 return res(1, len);
@@ -3314,7 +3314,7 @@ namespace regex
         size16_t specials[meta::distinct_chars_count] = {};
 
         template<typename Iterator>
-        constexpr bool match_primary(Iterator start, Iterator end, size_t& len)
+        constexpr bool match_primary(Iterator start, Iterator end, size32_t& len)
         {
             len = 0;
             bool ok = match_escaped(start, end, len);
@@ -3336,7 +3336,7 @@ namespace regex
         }
 
         template<typename Iterator>
-        constexpr bool match_range(Iterator start, Iterator end, size_t& len)
+        constexpr bool match_range(Iterator start, Iterator end, size32_t& len)
         {
             char c = *start;
             if (c == '[')
@@ -3361,7 +3361,7 @@ namespace regex
                 }
                 while (start != end && *start != ']')
                 {
-                    size_t item_len = 0;
+                    size32_t item_len = 0;
                     bool ok = match_range_item(start, end, item_len);
                     if (!ok)
                     {
@@ -3382,7 +3382,7 @@ namespace regex
         }
 
         template<typename Iterator>
-        constexpr bool match_range_item(Iterator start, Iterator end, size_t& len)
+        constexpr bool match_range_item(Iterator start, Iterator end, size32_t& len)
         {
             len = 0;
             bool ok = match_escaped(start, end, len);
@@ -3407,7 +3407,7 @@ namespace regex
                 if (start == end || *start == ']')
                     return false;
 
-                size_t range_end_len = 0;
+                size32_t range_end_len = 0;
                 bool escaped_ok = match_escaped(start, end, range_end_len);
                 if (!escaped_ok)
                     return false;
@@ -3427,7 +3427,7 @@ namespace regex
         }
 
         template<typename Iterator>
-        constexpr bool match_escaped(Iterator start, Iterator end, size_t& len)
+        constexpr bool match_escaped(Iterator start, Iterator end, size32_t& len)
         {
             char c = *start;
 
@@ -3464,7 +3464,7 @@ namespace regex
         template<typename ErrorStream>
         constexpr auto recognized(
             size16_t idx,
-            size_t len,
+            size32_t len,
             match_options options,
             source_point sp,
             ErrorStream& error_stream)
@@ -3475,7 +3475,7 @@ namespace regex
         }
     };
 
-    constexpr char regex_char(std::string_view sv, size_t& len)
+    constexpr char regex_char(std::string_view sv, size32_t& len)
     {
         if (sv[0] == '\\')
         {
@@ -3527,7 +3527,7 @@ namespace regex
             }
             while (sv[i] != ']')
             {
-                size_t len = 0;
+                size32_t len = 0;
                 char c1 = regex_char(sv.substr(i), len);
                 i += len;
                 if (sv[i] == '-')
@@ -3544,7 +3544,7 @@ namespace regex
         }
         else
         {
-            size_t len = 0;
+            size32_t len = 0;
             cs.set(utils::char_to_idx(regex_char(sv, len)));
         }
 
