@@ -39,6 +39,7 @@ All it needs is a C++17 compiler!
 * [Regular expressions](#regular-expressions)
 * [Diagnostics](#diagnostics)
 * [Resulting binary size](#resulting-binary-size)
+* [Groupped terms](#groupped-terms)
 
 ## Installation
 
@@ -1391,3 +1392,5 @@ Using the 6th argument to ```parser``` definition provide a custom limits struct
 ```max_sit_count_per_state_cap``` defined as ```static const ctpg::size_t```.
 The values have to be bigger than what comes out of the diagnostic message. This way you set the lower caps, decreasing the binary size assuring the actual numbers 
 don't exceed the caps.
+
+## Groupped Terms
