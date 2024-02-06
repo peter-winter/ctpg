@@ -778,6 +778,27 @@ namespace buffers
         std::string str;
     };
 
+    class string_view_buffer
+    {
+    public:
+        string_view_buffer(const std::string_view& str):
+            str(str)
+        {}
+
+        auto begin() const { return str.cbegin(); }
+        auto end() const { return str.cend(); }
+
+        using iterator = std::string_view::const_iterator;
+
+        std::string_view get_view(iterator start, iterator end) const
+        {
+            return std::string_view(str.data() + (start - str.begin()), end - start);
+        }
+
+    private:
+        std::string_view str;
+    };
+
     template<typename Buffer>
     using iterator_t = typename Buffer::iterator;
 }

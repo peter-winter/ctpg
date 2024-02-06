@@ -34,3 +34,20 @@ TEST_CASE("string buffer", "[buffers]")
     REQUIRE(result.has_value());
     REQUIRE(result.value() == 42);
 }
+
+TEST_CASE("string_view buffer, lvalue", "[buffers]")
+{
+    std::string_view txt(" 0  1  2 ");
+    string_view_buffer buf(txt);
+    auto result = test::p1.parse(buf);
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == 42);
+}
+
+TEST_CASE("string_view buffer, rvalue", "[buffers]")
+{
+    string_view_buffer buf(std::string_view(" 0  1  2 "));
+    auto result = test::p1.parse(buf);
+    REQUIRE(result.has_value());
+    REQUIRE(result.value() == 42);
+}
