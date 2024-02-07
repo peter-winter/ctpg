@@ -1073,7 +1073,9 @@ int main(int argc, char* argv[])
 
 ### Buffers
 
-There are currently two types of buffers available: ```cstring_buffer```, useful for *constexpr* parsing static array like buffer, and ```string_buffer``` for runtime parsing.
+There are currently three types of buffers available:
+- ```cstring_buffer```, useful for *constexpr* parsing static array-like buffers;
+- ```string_buffer``` and ```string_view_buffer``` for runtime parsing.
 
 It is however easy to add custom types of buffers, there are just couple of requirements for the types to be eligible as buffers.
 
