@@ -58,6 +58,7 @@ if (CTPG_ENABLE_TESTS)
         tests/buffers.cpp
         tests/contexts.cpp
         tests/custom_lexer.cpp
+        tests/groupped_terms.cpp
     )
 
     target_link_libraries(testbin PRIVATE Catch2::Catch2 ctpg::ctpg)
