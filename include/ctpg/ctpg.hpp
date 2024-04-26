@@ -3488,7 +3488,7 @@ namespace regex
         {
             auto res = dfa_match(sm, opts, source_point{}, buf.begin(), buf.end(), s);
 
-            Buffer::iterator end;
+            typename Buffer::iterator end;
             if (res.len == uninitialized16)
                 end = buf.end();
             else
