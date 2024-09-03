@@ -20,7 +20,7 @@ namespace test
             ErrorStream& error_stream)
         {
             if (start == end)
-                return recognized_term{};
+                return unrecognized_term;
 
             // 'a' -> 0
             // 'b' -> 1
@@ -36,7 +36,7 @@ namespace test
                 return recognized(1, 1, options, start, sp, error_stream);
             }
 
-            return recognized_term{};
+            return unrecognized_term;
         }
 
     private:

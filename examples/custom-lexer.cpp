@@ -20,7 +20,7 @@ public:
         ErrorStream& error_stream)
     {
         if (start == end)
-            return recognized_term{};
+            return unrecognized_term;
         if (*start >= '0' && *start <= '9')     // recognize only single digit numbers
         {
             // idx == 1, recognized 'number' term
@@ -31,7 +31,7 @@ public:
             // idx == 0, recognized 'comma' term
             return recognized(0, options, start, sp, error_stream);
         }
-        return recognized_term{};
+        return unrecognized_term;
     }
 
 private:
@@ -43,11 +43,13 @@ private:
         source_point sp,
         ErrorStream& error_stream)
     {
+        // respect the verbose option, print conditionally any debug message, with the source point
         if (options.verbose)
             error_stream << sp << " LEXER MATCH: Recognized " << idx << " \n";
 
-        // all terms have length == 1
+        // update source point to refer the exact character
         sp.update(start, start + 1);
+        // all terms have length == 1
         return recognized_term(idx, 1);
     }
 };
