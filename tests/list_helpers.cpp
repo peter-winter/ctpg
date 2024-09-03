@@ -38,6 +38,8 @@ namespace test
 {
     struct non_copyable_thing
     {
+        non_copyable_thing() = default;
+
         non_copyable_thing(const non_copyable_thing&) = delete;
         non_copyable_thing& operator = (const non_copyable_thing&) = delete;
 
