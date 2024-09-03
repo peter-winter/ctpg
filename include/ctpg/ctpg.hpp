@@ -265,7 +265,7 @@ namespace stdex
                 data[i] |= other.data[i];
         }
 
-        constexpr bool operator == (const cbitset<N>& other)
+        constexpr bool operator == (const cbitset<N>& other) const
         {
             for (auto i = 0u; i < underlying_count; ++i)
                 if (data[i] != other.data[i])
