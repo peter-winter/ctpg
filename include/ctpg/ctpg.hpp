@@ -124,8 +124,8 @@ namespace stdex
             constexpr it_type* cast() { return static_cast<it_type*>(this); }
             constexpr const it_type* cast() const { return static_cast<const it_type*>(this); }
 
-            constexpr bool operator == (const it_type& other) const { return cast()->ptr == other.ptr; }
-            constexpr bool operator != (const it_type& other) const { return cast()->ptr != other.ptr; }
+            constexpr friend bool operator == (it_type const& a, it_type const& b) { return a.cast()->ptr == b.cast()->ptr; }
+            constexpr friend bool operator != (it_type const& a, it_type const& b) { return a.cast()->ptr != b.cast()->ptr; }
             constexpr it_type operator - (size_type amount) const { return it_type{ cast()->ptr - amount }; }
             constexpr size_type operator - (const it_type& other) const { return size_type(cast()->ptr - other.ptr); }
             constexpr it_type operator + (size_type amount) const { return it_type{ cast()->ptr + amount }; }
