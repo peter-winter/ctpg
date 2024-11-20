@@ -38,7 +38,7 @@ TEST_CASE("simple grammar p1", "[simple grammar]")
     stream.str("");
     auto result4 = test::p1.parse(cstring_buffer("0120"), stream);
     REQUIRE(!result4.has_value());
-    REQUIRE(stream.str() == std::string("[1:4] PARSE: Syntax error: Unexpected '0'\n"));
+    REQUIRE(stream.str() == std::string("[1:4] PARSE: Syntax error: Unexpected term 0\n"));
 }
 
 namespace test
@@ -77,10 +77,10 @@ TEST_CASE("simple grammar p2", "[simple grammar]")
     stream.str("");
     auto result4 = test::p2.parse(cstring_buffer("012"), stream);
     REQUIRE(!result4.has_value());
-    REQUIRE(stream.str() == std::string("[1:3] PARSE: Syntax error: Unexpected '2'\n"));
+    REQUIRE(stream.str() == std::string("[1:3] PARSE: Syntax error: Unexpected term 2\n"));
 
     stream.str("");
     auto result5 = test::p2.parse(cstring_buffer("1"), stream);
     REQUIRE(!result5.has_value());
-    REQUIRE(stream.str() == std::string("[1:1] PARSE: Syntax error: Unexpected '1'\n"));
+    REQUIRE(stream.str() == std::string("[1:1] PARSE: Syntax error: Unexpected term 1\n"));
 }

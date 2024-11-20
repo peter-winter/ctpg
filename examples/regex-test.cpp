@@ -5,8 +5,8 @@
 
 using namespace ctpg;
 
-constexpr char pattern[] = R"([0-9a-zA-Z_]+)";
-constexpr regex::expr<pattern> r;
+constexpr char p[] = R"([0-9a-zA-Z_]+)";
+constexpr regex::expr<p> r;
 
 int main(int argc, char* argv[])
 {
