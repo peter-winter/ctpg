@@ -2940,7 +2940,6 @@ private:
         }
 
         ps.current_term_idx = res.term_idx;
-        ps.current_end_it = ps.current_it + res.len;
 
         if (ps.current_term_idx == uninitialized16)
         {
@@ -2949,6 +2948,7 @@ private:
         }
         else
         {
+            ps.current_end_it = ps.current_it + res.len;
             trace_recognized_term(ps);
         }
 
@@ -3487,7 +3487,13 @@ namespace regex
         constexpr bool match(match_options opts, const Buffer& buf, Stream& s) const
         {
             auto res = dfa_match(sm, opts, source_point{}, buf.begin(), buf.end(), s);
-            auto end = buf.begin() + res.len;
+
+            typename Buffer::iterator end;
+            if (res.len == uninitialized16)
+                end = buf.end();
+            else
+                end = buf.begin() + res.len;
+
             if (res.term_idx == 0 && end == buf.end())
                 return true;
             else
